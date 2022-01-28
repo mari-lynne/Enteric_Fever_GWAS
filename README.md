@@ -1,2 +1,6 @@
-# Enteric_Fever_GWAS
-Human challenge model of enteric fever GWAS
+# Enteric Fever GWAS
+
+- Scripts and workflow for quality control, merging, and imputation of genotyping data across enteric challenge studies; T1, T2, P1, Tyger, PATCH and VAST
+- QC steps performed using PLINK, Liftover (37-38), BCFtools and shell scripting
+- Imputation of genotyping data using TOPMED server https://imputation.biodatacatalyst.nhlbi.nih.gov/#!
+- Current Association studies can be found in Fc Receptor Project repositry
