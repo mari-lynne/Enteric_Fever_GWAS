@@ -14,7 +14,6 @@
 #run thresholds to remove poor qual/rare snps
 
 
-
 #Plink_qc.R ####
 install.packages("devtools")
 library(devtools)
