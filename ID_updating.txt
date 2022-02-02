@@ -1,0 +1,21 @@
+Hi this is my new Vim file of notes, a bit of a side quest for me
+But I will use it to note down ID changes
+
+Background ####
+#Previously when merging T1T2P1 with VAST_PATCH there were some ID issues in that the genetics(blinded) IDs of some of the VP samples were unfortunately the same as the T1T2 study.
+#As this was after significant work/imputation I tried to work around it by modifying the files to add _26 to the end of duplicate IDs in VAST/PATCH...
+#But because they were in asoociated files etc. this was more difficult the you would think/might be confusing for future analysis
+
+#I want to rerun the workflow anyways to check the snp merging I may as well sort the IDs from the start
+#My proposed solution is to simply add the study code in the FID column of the FAM file (I do still need to check that this will stay separate in vcf etc or might have to re-separate)
+#Either way I think this will be clearer then my previous script
+
+#AIMS ####
+
+#Update .fam FID files from VAST_PATCH to include study code
+#PATCH == 3 VAST samples == 4 T1T2 == 1 Tyger == 2
+
+setwd("~/GWAS_22/Enteric_Fever_GWAS/Pre-Impute/ID_updating"
+
+if(hello)
+
