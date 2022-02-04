@@ -51,8 +51,8 @@ system("plink2 --bfile VAST_PATCH --update-ids new_vp_IDs2.txt --make-bed --out 
 #check new fam file
 check <- fread("VAST_PATCH_2.fam")
 
-#success IDs updated with concatenated IDs
-#save new genotyping IDs to metadata ID folder 
+#success - IDs updated with concatenated IDs
+#save new genotyping IDs to metadata ID folder ####
 
 write.csv(check[,2], file = "new_VAST_IID.csv")
 
