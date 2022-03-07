@@ -9,21 +9,36 @@
 #upload merged VCF files to TOPMED
 #Post-imputation QC
 
-#Original files:
+#Feb 05 2022 ####
+#QC Studies (test merge)
+#Liftover
+#Will Rayener pre-impute QC
+#Merge all files 
+#Prepare for TOPMED Imputation
 
-setwd('/home/mari/GWAS/all_enteric/clean_data') #Raw_data
+#Original files:
+library(dplyr)
+library(data.table)
+
+#Raw_data "~/GWAS_22/new_gwas/StudyName")
+
+setwd("~/GWAS_22/new_gwas/T1T2")
 
 #convert all to bed files ####
 ./plink --file P1Tyger --make-bed --out P1Tyger
-./plink --file T1T2 --make-bed --out T1T2
-./plink --file Rdurury --make-bed --out T1T2
+plink2 --map T1T2 --ped T1T2 --make-bed --out T1T2
+#./plink --file Rdurury --make-bed --out VAST_PATCH 
+
+#Feb 21 22 ###
+#Files are updated IDs and saved as new bed files
+#QC each before testing merge
 
 #Pre-impute tool QC ####
 
 #Do per study 
 #VAST ####
 
-setwd('/home/mari/GWAS/all_enteric/clean_data')
+setwd("~/GWAS_22/new_gwas/VAST_PATCH") 
 library(data.table)
 library(stringr)
 library(dplyr)
@@ -31,8 +46,10 @@ library(tidylog)
 
 #Update RS ID's from the GSA
 #update Global Screening array plink file with Snp coordinates using update name function (first column =bp, second column = rsID, in 37 format)
-remap <- fread("GSA-24v3-0_rsids.txt") #old snp name col 1, new snp name col2
-system("./plink --bfile vast_patch/VAST_PATCH --update-name GSA-24v3-0_rsids.txt --make-bed --out VAST_rename")
+remap <- fread("~/GWAS_22/new_gwas/GSA-24v3-0_rsids.txt")
+
+#old snp name col 1, new snp name col2
+system("./plink --bfile VAST_PATCH/VAST_PATCH_2 --update-name GSA-24v3-0_rsids.txt --make-bed --out VAST_rename")
 
 #read data library(data.table)
 bim<-fread("VAST_rename.bim")
