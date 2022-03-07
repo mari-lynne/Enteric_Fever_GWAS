@@ -1,0 +1,43 @@
+---
+title: "Pre-Imputation Steps"
+author: "Mari Johnson"
+date: "07/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Introduction
+
+This script includes preparation steps for QC and formatting GWAS microarray data for imputation
+There are 3 eneteric GWAS experiments (across 6 studies) that need to be QC'd and merged;
+- T1 T2
+- P1 and Tyger
+- VAST and PATCH
+
+Raw data was saved in PLINK1 format, updated to binary format (fam, bed, bim)
+
+VAST_PATCH files have updated IDs which were saved as new bed files
+See ID_updating/New_IDs.R for details
+File Tracker.txt also has details of file types
+
+Aims ##
+
+- To ensure all studies have the same RS IDs and genome version
+- QC data for duplicates, A > T SNPs etc.
+- Merge QC'd Study Data
+- Format data into vcf.gz files for uploading to Topmed Imputation Server
+
+Set Up ##
+
+```{r Library}
+setwd("~/GWAS_22/new_gwas/VAST_PATCH")
+library(data.table)
+library(stringr)
+library(dplyr)
+library(tidylog)
+```
+
+
