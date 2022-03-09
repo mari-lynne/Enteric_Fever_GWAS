@@ -29,7 +29,7 @@ setwd("~/GWAS_22/new_gwas/T1T2")
 plink2 --map T1T2 --ped T1T2 --make-bed --out T1T2
 #./plink --file Rdurury --make-bed --out VAST_PATCH 
 
-#Feb 21 22 ###
+#Feb 21 22 ###############################################################
 #Files are updated IDs and saved as new bed files
 #QC each before testing merge
 
