@@ -55,7 +55,7 @@ mkdir ~/GWAS_22/new_gwas/updated_snps/T1 ;
 mkdir ~/GWAS_22/new_gwas/updated_snps/Tyger
 ```
 
-## SNP ID formatting
+## VAST SNP ID formatting
 
 ```{r Liftover format BED file}
 setwd("~/GWAS_22/new_gwas/VAST_PATCH")
@@ -84,5 +84,41 @@ plink2 --bfile VAST_PATCH_2 --make-pgen --out VP
 plink2 --pfile VP --extract VAST_38_rm.snps --update-map VAST_38_rm.pos --sort-vars --make-pgen --out VAST_remap
 plink2 --pfile VAST_remap --make-bed --out VAST_remap #bfile version
 ```
+## T1 T2 formatting
+
+```{r Clean T1 Bed files}
+setwd("~/GWAS_22/new_gwas/T1T2")
+
+#Load SNP info
+bim<-fread("T1T2.bim")
+
+#Filter SNPs in autosomal chromosomes")
+non_auto <- bim %>% filter(V1 == "0" | V1 == "24")
+#keep only SNPS containing rs IDs #
+rs_bim <- bim %>% filter(!grepl("rs", V2))
+#Remove duplicates 
+duplicated_snps <- bim[duplicated(paste(bim$V1,bim$V4)),]
+
+#remove snps where A > T, C > G
+#PLINK can't tell what strand to merge/read these SNPs from
+atcg_snps <-  bim[((bim$V5 == "A") & (bim$V6 == "T")) |
+                         ((bim$V5 == "T") & (bim$V6 == "A")) |
+                         ((bim$V5 == "C") & (bim$V6 == "G")) |
+                         ((bim$V5 == "G") & (bim$V6 == "C"))]
+#Exclusion list
+exclude <- rbind(non_auto, duplicated_snps, atcg_snps, rs_bim)
+write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names = F, col.names = F)
+system("plink --bfile T1T2 --exclude exclude_snps_rm.txt --make-bed --out T1T2_rm")
+#error invalid centimorgan position on line 58721 of T1T2.bim.
+#use Plink1.9 to convert for now, error reported
+```
+
+
+```{bash Make T1 Bed files}
+cd ~/GWAS_22/new_gwas/T1T2
+awk '{print "chr" $1, $4 -1, $4, $2 }' T1T2_rm.bim > T1T2_rm_lift
+
+#https://genome.ucsc.edu/cgi-bin/hgLiftOver
 
 ```
+
