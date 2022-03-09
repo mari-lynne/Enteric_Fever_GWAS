@@ -1,24 +1,33 @@
 #Feb 21 22 ###############################################################
-#Files are updated IDs and saved as new bed files
-#QC each before testing merge
+#Files have updated IDs and saved as new bed files
+#See ID_updating/New_IDs.R for details
 
-#Pre-impute tool QC ####
-
-#Do per study 
 #VAST ####
 
-setwd("~/GWAS_22/new_gwas/VAST_PATCH") 
+setwd("~/GWAS_22/new_gwas/VAST_PATCH")
 library(data.table)
 library(stringr)
 library(dplyr)
 library(tidylog)
 
-#Update RS ID's from the GSA
+#Steps #### 7/03/22
+
+#Update GSA > Rs IDs
+#QC steps, duplicate filters etc
+#Liftover from 37 > 38
+#Repeat for all studies
+#Test merging in Plink as sense check
+#Merge data
+#Will Rayner tool
+#Upload to TOPMED for imputation
+
+#Update RS ID's from the GSA ####
+
 #update Global Screening array plink file with Snp coordinates using update name function (first column =bp, second column = rsID, in 37 format)
 remap <- fread("~/GWAS_22/new_gwas/GSA-24v3-0_rsids.txt")
 
 #old snp name col 1, new snp name col2
-system("./plink --bfile VAST_PATCH/VAST_PATCH_2 --update-name GSA-24v3-0_rsids.txt --make-bed --out VAST_rename")
+system("./plink2 --bfile VAST_PATCH/VAST_PATCH_2 --update-name GSA-24v3-0_rsids.txt --make-bed --out VAST_rename")
 
 #read data library(data.table)
 bim<-fread("VAST_rename.bim")

@@ -7,37 +7,183 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(eval = FALSE)
+knitr::opts_chunk$set(engine.opts='-l')
 ```
 
-## Introduction
+## Introduction 
 
-This script includes preparation steps for QC and formatting GWAS microarray data for imputation
-There are 3 eneteric GWAS experiments (across 6 studies) that need to be QC'd and merged;
+This script includes preparation steps for QC and formatting GWAS microarray data for imputation\
+There are 3 eneteric GWAS experiments (across 6 studies) that need to be QC'd and merged;\
 - T1 T2
 - P1 and Tyger
 - VAST and PATCH
 
 Raw data was saved in PLINK1 format, updated to binary format (fam, bed, bim)
 
-VAST_PATCH files have updated IDs which were saved as new bed files
-See ID_updating/New_IDs.R for details
-File Tracker.txt also has details of file types
+VAST_PATCH files have updated IDs which were saved as new bed files\
+See ID_updating/New_IDs.R for details\
+File Tracker.txt also has details of file types\
 
-Aims ##
+## Aims 
 
 - To ensure all studies have the same RS IDs and genome version
 - QC data for duplicates, A > T SNPs etc.
 - Merge QC'd Study Data
 - Format data into vcf.gz files for uploading to Topmed Imputation Server
 
-Set Up ##
+## Set Up 
 
 ```{r Library}
-setwd("~/GWAS_22/new_gwas/VAST_PATCH")
+setwd("~/GWAS_22/new_gwas")
 library(data.table)
 library(stringr)
 library(dplyr)
 library(tidylog)
+library(stringi)
+```
+```{bash Set up folders}
+cd ~/GWAS_22/new_gwas
+#still need to troubleshoot setting bashrc profile to run in code chunks engine opts - l didn't work,
+#Have moved plink2 to ~/bin which is in the markdown default shell PATH
+```
+
+```{bash Make folders}
+mkdir ~/GWAS_22/new_gwas/updated_snps ;
+mkdir ~/GWAS_22/new_gwas/updated_snps/VAST ;
+mkdir ~/GWAS_22/new_gwas/updated_snps/T1 ;
+mkdir ~/GWAS_22/new_gwas/updated_snps/Tyger
+```
+
+## SNP ID formatting
+
+```{r Update SNP conversion file}
+#Update Global Screening array plink file with Snp coordinates using update name function 
+remap <- fread("~/GWAS_22/new_gwas/GSA-24v3-0_rsids.txt", header = F)
+
+remap <- remap[, c(2,1)]
+
+#make new dup check column
+remap_2 <- remap %>% mutate(dup_check = stri_duplicated(remap$V2))
+#rm duplicates
+remap_2 <- remap_2 %>% filter(dup_check == FALSE) #removes 9389 rows
+#tidy
+remap_2 <- remap_2 %>% select(-dup_check)
+
+write.table(file="~/GWAS_22/new_gwas/GSA-24v3-0_rsids_v2.txt", remap_2, sep = "\t", quote=F, row.names = F, col.names = F)
+```
+
+```{r Clean experiment SNPs}
+setwd("~/GWAS_22/new_gwas/VAST_PATCH")
+
+#read data library(data.table)
+bim<-fread("VAST_PATCH_2.bim")
+
+#Filter SNPs in autosomal chromosomes")
+chrom <- c(seq(1,23),"X")
+bim <- bim[bim$V1%in%chrom,]
+
+#Remove duplicates 
+bim.dups<-bim[duplicated(paste(bim$V1, bim$V4)),]
+#subset all SNP IDs that are in col one and col 4 
+duplicated_snps<-bim.dups$V2
+
+#remove snps where A > T, C > G as PLINK can't tell what strand to merge/read these SNPs from
+atcg_snps <- bim$V2[((bim$V5 == "A") & (bim$V6 == "T")) |
+                    ((bim$V5 == "T") & (bim$V6 == "A")) |
+                    ((bim$V5 == "C") & (bim$V6 == "G")) |
+                    ((bim$V5 == "G") & (bim$V6 == "C"))]
+
+#make exclusion SNP list ##
+exclude <- c(duplicated_snps, atcg_snps)
+
+write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names = F, col.names = F)
+
+system("plink2 --bfile VAST_PATCH_2 --exclude exclude_snps_rm.txt --make-bed --out VAST_rename_rm")
+```
+
+```{bash convert GSA SNP IDs}
+cd ~/GWAS_22/new_gwas/VAST_PATCH
+#--update-name <filename> [new ID col. number] [old ID col.]
+#plink2 --bfile VAST_rename_rm --update-name GSA-24v3-0_rsids_v2.txt --make-bed --out VAST_rename
+#not convinced this is working so going to update files manually
+```
+
+```{r Update GSA SNP names in R}
+setwd("~/GWAS_22/new_gwas/VAST_PATCH")
+#left join remap_2 to bim file merge add change colnames 
+bim_rename<-fread("VAST_rename_rm.bim")
+colnames(remap_2) <- c("newID", "oldID")
+colnames(bim_rename) <- c("chr", "oldID", "V3", "BP", "A1", "A2")
+
+updated <- left_join(remap_2, bim_rename, by = "oldID")
+#627,340 matched rows
+#reorder cols 
+
+updated <- select(updated, chr, newID, V3, BP, A1, A2)
+#remove non matched snps
+
+updated <- filter(updated, chr != "NA")
+#627340 rows remaining 
+
+write.table(file="VAST_rename.bim", updated, sep = "\t", quote=F, row.names = F, col.names = F)
+
+```
+
+## Liftover
+```{bash Make BED file}
+cd ~/GWAS_22/new_gwas/VAST_PATCH
+#Make BED file:
+#Different to Plink .bed format
+awk '{print "chr" $1, $4 -1, $4, $2 }' VAST_rename.bim > VAST_rename_rm_lift
+```
+```{r test}
+setwd("~/GWAS_22/new_gwas/VAST_PATCH")
+rename <- fread("VAST_rename.bim")
+```
+
+```{bash Set Up}
+cd ~/GWAS_22/new_gwas/updated_snps
+
+#Download Liftover program and chain files from https://genome-store.ucsc.edu/
+
+wget 'ftp://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz' -O hg19ToHg38.over.chain.gz
+gunzip hg19ToHg38.over.chain.gz
+
 ```
 
 
+
+```{bash Run Liftover}
+#Downloaded liftover to ~/bin
+#Make executable
+chmod +x ~/bin/liftOver
+cd ~/GWAS_22/new_gwas/updated_snps
+#To run liftOver, the usage is:
+#liftOver oldFile map.chain newFile unMapped
+#where:
+#oldFile is the file you want to convert from
+#map.chain is the chain file used to convert from one build to another
+#newFile is the converted file you want to create
+#unMapped is a file that contains all the unmapped positions
+
+liftOver VAST/VAST_rename_rm_lift hg19ToHg38.over.chain VAST_38.bed
+#tool not running will use online version for now
+
+#Liftover go online to https://genome.ucsc.edu/cgi-bin/hgLiftOver
+#submit file at the bottom of the page
+```
+
+
+# ectract mapped variants snp IDs
+awk '{print $4}' VAST_38.bed > VAST_38_rm.snps
+# ectract updated positions
+awk '{print $4, $3}' VAST_38.bed > VAST_38_rm.pos
+
+
+#update plink file with SNPs that we could extract, and update the snp coordinates using update map function
+plink2 --bfile VAST_rename_rm --rm-dup --make-bed --out VAST_rename_rm_dup
+#exclude duplicates again from rm-dup list
+plink2 --bfile VAST_rename_rm --exclude VAST_rename_rm_dup.rmdup.mismatch --make-bed --out VAST_rename_rm_dup
+plink2 --bfile VAST_rename_rm_dup --extract VAST_38_rm.snps --update-map VAST_38_rm.pos --make-bed --out VAST_remap
+```
