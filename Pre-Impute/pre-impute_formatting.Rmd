@@ -102,12 +102,6 @@ write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names 
 system("plink2 --bfile VAST_PATCH_2 --exclude exclude_snps_rm.txt --make-bed --out VAST_rename_rm")
 ```
 
-```{bash convert GSA SNP IDs}
-cd ~/GWAS_22/new_gwas/VAST_PATCH
-#--update-name <filename> [new ID col. number] [old ID col.]
-#plink2 --bfile VAST_rename_rm --update-name GSA-24v3-0_rsids_v2.txt --make-bed --out VAST_rename
-#not convinced this is working so going to update files manually
-```
 
 ```{r Update GSA SNP names in R}
 setwd("~/GWAS_22/new_gwas/VAST_PATCH")
@@ -117,73 +111,57 @@ colnames(remap_2) <- c("newID", "oldID")
 colnames(bim_rename) <- c("chr", "oldID", "V3", "BP", "A1", "A2")
 
 updated <- left_join(remap_2, bim_rename, by = "oldID")
-#627,340 matched rows
 #reorder cols 
-
 updated <- select(updated, chr, newID, V3, BP, A1, A2)
 #remove non matched snps
-
 updated <- filter(updated, chr != "NA")
-#627340 rows remaining 
+#sort by chromosome and bp
+updated <- updated[order(chr, BP),]
 
 write.table(file="VAST_rename.bim", updated, sep = "\t", quote=F, row.names = F, col.names = F)
 
 ```
-
 ## Liftover
 ```{bash Make BED file}
 cd ~/GWAS_22/new_gwas/VAST_PATCH
 #Make BED file:
 #Different to Plink .bed format
 awk '{print "chr" $1, $4 -1, $4, $2 }' VAST_rename.bim > VAST_rename_rm_lift
-```
-```{r test}
-setwd("~/GWAS_22/new_gwas/VAST_PATCH")
-rename <- fread("VAST_rename.bim")
-```
-
-```{bash Set Up}
-cd ~/GWAS_22/new_gwas/updated_snps
-
-#Download Liftover program and chain files from https://genome-store.ucsc.edu/
-
-wget 'ftp://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz' -O hg19ToHg38.over.chain.gz
-gunzip hg19ToHg38.over.chain.gz
 
 ```
 
-
-
-```{bash Run Liftover}
-#Downloaded liftover to ~/bin
-#Make executable
-chmod +x ~/bin/liftOver
-cd ~/GWAS_22/new_gwas/updated_snps
-#To run liftOver, the usage is:
-#liftOver oldFile map.chain newFile unMapped
-#where:
-#oldFile is the file you want to convert from
-#map.chain is the chain file used to convert from one build to another
-#newFile is the converted file you want to create
-#unMapped is a file that contains all the unmapped positions
-
-liftOver VAST/VAST_rename_rm_lift hg19ToHg38.over.chain VAST_38.bed
-#tool not running will use online version for now
-
+```{bash Liftover Online}
 #Liftover go online to https://genome.ucsc.edu/cgi-bin/hgLiftOver
 #submit file at the bottom of the page
+
+#output
+#Successfully converted 625337 records
+#Conversion failed on 2003 records.
+#Download as VAST_38
 ```
 
+```{bash Updating Liftover SNPs}
+
+
+cd ~/GWAS_22/new_gwas/Liftover_Results
 
 # ectract mapped variants snp IDs
 awk '{print $4}' VAST_38.bed > VAST_38_rm.snps
 # ectract updated positions
 awk '{print $4, $3}' VAST_38.bed > VAST_38_rm.pos
-
-
 #update plink file with SNPs that we could extract, and update the snp coordinates using update map function
-plink2 --bfile VAST_rename_rm --rm-dup --make-bed --out VAST_rename_rm_dup
+plink2 --bfile ~/GWAS_22/new_gwas/VAST_PATCH/VAST_rename --rm-dup --make-bed --out VAST_rename_rm_dup
+
+#Error: VAST_rename.bim has a split chromosome. Use --make-pgen + --sort-vars to remedy this.
+
 #exclude duplicates again from rm-dup list
 plink2 --bfile VAST_rename_rm --exclude VAST_rename_rm_dup.rmdup.mismatch --make-bed --out VAST_rename_rm_dup
 plink2 --bfile VAST_rename_rm_dup --extract VAST_38_rm.snps --update-map VAST_38_rm.pos --make-bed --out VAST_remap
+
+```
+
+
+
+
+
 ```
