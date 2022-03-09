@@ -152,3 +152,89 @@ write.table(file="T1T2_rm.bim", bim, sep = "\t", quote=F, row.names = F, col.nam
 #Rerun previous chunk with new bim file - worked :)
 ```
 
+## P1 Tyger Formatting
+
+```{r Clean P1 Bed files}
+setwd("~/GWAS_22/new_gwas/P1Tyger")
+
+#Load SNP info
+bim<-fread("P1Tyger.bim")
+
+#Filter SNPs in autosomal chromosomes")
+non_auto <- bim %>% filter(V1 == "0" | V1 == "24")
+#keep only SNPS containing rs IDs #
+rs_bim <- bim %>% filter(!grepl("rs", V2))
+#Remove duplicates 
+duplicated_snps <- bim[duplicated(paste(bim$V1,bim$V4)),]
+
+#remove snps where A > T, C > G
+#PLINK can't tell what strand to merge/read these SNPs from
+atcg_snps <-  bim[((bim$V5 == "A") & (bim$V6 == "T")) |
+                         ((bim$V5 == "T") & (bim$V6 == "A")) |
+                         ((bim$V5 == "C") & (bim$V6 == "G")) |
+                         ((bim$V5 == "G") & (bim$V6 == "C"))]
+#Exclusion list
+exclude <- rbind(non_auto, duplicated_snps, atcg_snps, rs_bim)
+exclude <- exclude$V2
+write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names = F, col.names = F)
+system("plink --bfile P1Tyger --exclude exclude_snps_rm.txt --make-bed --out P1Tyger_rm")
+
+```
+
+
+```{bash Make P1 Bed liftover files}
+cd ~/GWAS_22/new_gwas/P1Tyger
+awk '{print "chr" $1, $4 -1, $4, $2 }' P1Tyger_rm.bim > P1Tyger_rm_lift
+
+#https://genome.ucsc.edu/cgi-bin/hgLiftOver
+#Successfully converted 693434 records: View Conversions
+#Conversion failed on 18369 records.
+#Download as P1Tyger_38.bed
+```
+
+
+```{bash Update P1 with Liftover files}
+cd ~/GWAS_22/new_gwas/P1Tyger
+# extract mapped variants snp IDs
+awk '{print $4}' P1Tyger_38.bed > P1Tyger_38_rm.snps
+# extract updated positions
+awk '{print $4, $3}' P1Tyger_38.bed > P1Tyger_38_rm.pos
+
+#update plink file with SNPs that we could extract, and update the snp coordinates using update map function
+plink2 --bfile P1Tyger_rm --make-pgen --out P1Tyger
+plink2 --pfile P1Tyger --extract P1Tyger_38_rm.snps --update-map P1Tyger_38_rm.pos --sort-vars --make-pgen --out P1Tyger_remap
+plink2 --pfile P1Tyger_remap --make-bed --out P1Tyger_remap #bfile version
+#no cm issues
+```
+
+```{r VAST file cleaning}
+#Duplicates etc. still need to be removed can do from remap file to check for now
+
+setwd("~/GWAS_22/new_gwas/Updated_SNPs")
+
+#Load SNP info
+bim <-fread("VAST_remap.bim")
+
+#Filter SNPs in autosomal chromosomes")
+non_auto <- bim %>% filter(V1 == "0" | V1 == "24")
+#keep only SNPS containing rs IDs #
+rs_bim <- bim %>% filter(!grepl("rs", V2))
+#Remove duplicates 
+duplicated_snps <- bim[duplicated(paste(bim$V1,bim$V4)),]
+
+#remove snps where A > T, C > G
+#PLINK can't tell what strand to merge/read these SNPs from
+atcg_snps <-  bim[((bim$V5 == "A") & (bim$V6 == "T")) |
+                         ((bim$V5 == "T") & (bim$V6 == "A")) |
+                         ((bim$V5 == "C") & (bim$V6 == "G")) |
+                         ((bim$V5 == "G") & (bim$V6 == "C"))]
+#Exclusion list
+exclude <- rbind(non_auto, duplicated_snps, atcg_snps, rs_bim)
+exclude <- exclude$V2
+write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names = F, col.names = F)
+system("plink --bfile VAST_remap --exclude exclude_snps_rm.txt --make-bed --out VAST_remap")
+#only 612,676 variants left
+```
+
+##Merging
+
