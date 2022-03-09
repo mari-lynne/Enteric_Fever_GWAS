@@ -57,111 +57,32 @@ mkdir ~/GWAS_22/new_gwas/updated_snps/Tyger
 
 ## SNP ID formatting
 
-```{r Update SNP conversion file}
-#Update Global Screening array plink file with Snp coordinates using update name function 
-remap <- fread("~/GWAS_22/new_gwas/GSA-24v3-0_rsids.txt", header = F)
-
-remap <- remap[, c(2,1)]
-
-#make new dup check column
-remap_2 <- remap %>% mutate(dup_check = stri_duplicated(remap$V2))
-#rm duplicates
-remap_2 <- remap_2 %>% filter(dup_check == FALSE) #removes 9389 rows
-#tidy
-remap_2 <- remap_2 %>% select(-dup_check)
-
-write.table(file="~/GWAS_22/new_gwas/GSA-24v3-0_rsids_v2.txt", remap_2, sep = "\t", quote=F, row.names = F, col.names = F)
-```
-
-```{r Clean experiment SNPs}
+```{r Liftover format BED file}
 setwd("~/GWAS_22/new_gwas/VAST_PATCH")
+#Download GSA BED file https://emea.support.illumina.com/downloads/infinium-global-screening-array-v3-0-support-files.htm
+#check file and remove header
+BED <- fread("GSA-24v3-0_A1.bed")  
+write.table(file="GSA_BED.txt", BED, sep = "\t", quote=F, row.names = F, col.names = F)
 
-#read data library(data.table)
-bim<-fread("VAST_PATCH_2.bim")
-
-#Filter SNPs in autosomal chromosomes")
-chrom <- c(seq(1,23),"X")
-bim <- bim[bim$V1%in%chrom,]
-
-#Remove duplicates 
-bim.dups<-bim[duplicated(paste(bim$V1, bim$V4)),]
-#subset all SNP IDs that are in col one and col 4 
-duplicated_snps<-bim.dups$V2
-
-#remove snps where A > T, C > G as PLINK can't tell what strand to merge/read these SNPs from
-atcg_snps <- bim$V2[((bim$V5 == "A") & (bim$V6 == "T")) |
-                    ((bim$V5 == "T") & (bim$V6 == "A")) |
-                    ((bim$V5 == "C") & (bim$V6 == "G")) |
-                    ((bim$V5 == "G") & (bim$V6 == "C"))]
-
-#make exclusion SNP list ##
-exclude <- c(duplicated_snps, atcg_snps)
-
-write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names = F, col.names = F)
-
-system("plink2 --bfile VAST_PATCH_2 --exclude exclude_snps_rm.txt --make-bed --out VAST_rename_rm")
-```
-
-
-```{r Update GSA SNP names in R}
-setwd("~/GWAS_22/new_gwas/VAST_PATCH")
-#left join remap_2 to bim file merge add change colnames 
-bim_rename<-fread("VAST_rename_rm.bim")
-colnames(remap_2) <- c("newID", "oldID")
-colnames(bim_rename) <- c("chr", "oldID", "V3", "BP", "A1", "A2")
-
-updated <- left_join(remap_2, bim_rename, by = "oldID")
-#reorder cols 
-updated <- select(updated, chr, newID, V3, BP, A1, A2)
-#remove non matched snps
-updated <- filter(updated, chr != "NA")
-#sort by chromosome and bp
-updated <- updated[order(chr, BP),]
-
-write.table(file="VAST_rename.bim", updated, sep = "\t", quote=F, row.names = F, col.names = F)
-
-```
-## Liftover
-```{bash Make BED file}
-cd ~/GWAS_22/new_gwas/VAST_PATCH
-#Make BED file:
-#Different to Plink .bed format
-awk '{print "chr" $1, $4 -1, $4, $2 }' VAST_rename.bim > VAST_rename_rm_lift
-
-```
-
-```{bash Liftover Online}
 #Liftover go online to https://genome.ucsc.edu/cgi-bin/hgLiftOver
-#submit file at the bottom of the page
-
-#output
+#Submit file at the bottom of the page
+#output:
 #Successfully converted 625337 records
 #Conversion failed on 2003 records.
-#Download as VAST_38
+#Download as VAST_38.bed
 ```
 
 ```{bash Updating Liftover SNPs}
 
-
-cd ~/GWAS_22/new_gwas/Liftover_Results
-
-# ectract mapped variants snp IDs
+cd ~/GWAS_22/new_gwas/VAST_PATCH
+#Exctract mapped variants snp IDs
 awk '{print $4}' VAST_38.bed > VAST_38_rm.snps
-# ectract updated positions
+#Extract updated positions
 awk '{print $4, $3}' VAST_38.bed > VAST_38_rm.pos
-#update plink file with SNPs that we could extract, and update the snp coordinates using update map function
-plink2 --bfile ~/GWAS_22/new_gwas/VAST_PATCH/VAST_rename --rm-dup --make-bed --out VAST_rename_rm_dup
-
-#Error: VAST_rename.bim has a split chromosome. Use --make-pgen + --sort-vars to remedy this.
-
-#exclude duplicates again from rm-dup list
-plink2 --bfile VAST_rename_rm --exclude VAST_rename_rm_dup.rmdup.mismatch --make-bed --out VAST_rename_rm_dup
-plink2 --bfile VAST_rename_rm_dup --extract VAST_38_rm.snps --update-map VAST_38_rm.pos --make-bed --out VAST_remap
-
+#Update plink file with SNPs that we could extract, and update the snp coordinates using update map function
+plink2 --bfile VAST_PATCH_2 --make-pgen --out VP
+plink2 --pfile VP --extract VAST_38_rm.snps --update-map VAST_38_rm.pos --sort-vars --make-pgen --out VAST_remap
+plink2 --pfile VAST_remap --make-bed --out VAST_remap #bfile version
 ```
-
-
-
-
 
 ```
