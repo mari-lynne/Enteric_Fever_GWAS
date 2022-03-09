@@ -107,6 +107,7 @@ atcg_snps <-  bim[((bim$V5 == "A") & (bim$V6 == "T")) |
                          ((bim$V5 == "G") & (bim$V6 == "C"))]
 #Exclusion list
 exclude <- rbind(non_auto, duplicated_snps, atcg_snps, rs_bim)
+exclude <- exclude$V2
 write.table(file="exclude_snps_rm.txt", exclude, sep = "\t", quote=F, row.names = F, col.names = F)
 system("plink --bfile T1T2 --exclude exclude_snps_rm.txt --make-bed --out T1T2_rm")
 #error invalid centimorgan position on line 58721 of T1T2.bim.
@@ -114,11 +115,40 @@ system("plink --bfile T1T2 --exclude exclude_snps_rm.txt --make-bed --out T1T2_r
 ```
 
 
-```{bash Make T1 Bed files}
+```{bash Make T1 Bed liftover files}
 cd ~/GWAS_22/new_gwas/T1T2
 awk '{print "chr" $1, $4 -1, $4, $2 }' T1T2_rm.bim > T1T2_rm_lift
 
 #https://genome.ucsc.edu/cgi-bin/hgLiftOver
+#Successfully converted 693434 records: View Conversions
+#Conversion failed on 18369 records.
+#Download as T1T2_38.bed
+```
 
+
+```{bash Update T1 with Liftover files}
+cd ~/GWAS_22/new_gwas/T1T2
+# extract mapped variants snp IDs
+awk '{print $4}' T1T2_38.bed > T1T2_38_rm.snps
+# extract updated positions
+awk '{print $4, $3}' T1T2_38.bed > T1T2_38_rm.pos
+
+#update plink file with SNPs that we could extract, and update the snp coordinates using update map function
+plink2 --bfile T1T2_rm --make-pgen --out T1T2
+plink2 --pfile T1T2 --extract T1T2_38_rm.snps --update-map T1T2_38_rm.pos --sort-vars --make-pgen --out T1T2_remap
+plink2 --pfile T1T2_remap --make-bed --out T1T2_remap #bfile version
+#Error: Invalid centimorgan position on line 57301 of T1T2_rm.bim.
+
+```
+
+```{r Update cm position}
+#Some NaN values in .bim file, set cm value to dummy value of 0
+#There are ways to calculate it however this doesn't seem essential for now
+#Will try just changing NaN values to 0 first, if not will replace the whole col with 0's
+setwd("~/GWAS_22/new_gwas/T1T2")
+bim <- fread("T1T2_rm.bim")
+bim$V3[grepl("NaN",bim$V3)] <-"0"
+write.table(file="T1T2_rm.bim", bim, sep = "\t", quote=F, row.names = F, col.names = F)
+#Rerun previous chunk with new bim file - worked :)
 ```
 
