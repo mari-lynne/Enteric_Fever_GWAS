@@ -236,5 +236,81 @@ system("plink --bfile VAST_remap --exclude exclude_snps_rm.txt --make-bed --out 
 #only 612,676 variants left
 ```
 
-##Merging
+## Alignment to reference genome
+```{bash Alignment to ref genome}
+cd ~/GWAS_22/new_gwas/Updated_SNPs
+#Before we can merge/impute studies, we need to check for strand inconsistencies
+#The best way to do this is to compare to a reference genome
+#Plink offers a flip-scan option
+#But will instead use the perl tool from Will Rayner
+#Estimates possible flips by looking at overal LD, if suddenly a SNP is not in LD when it should be, very likely that that SNP has been incorrectly aligned
+
+#generate TOPMED38 vcf.gz file to use
+
+#VAST
+#plink2 --bfile VAST_remap --freq --out VAST_remap
+#perl pre_impute.pl -b VAST_remap.bim -f VAST_remap.afreq -r PASS.VariantsTOPMED38.tab.gz -h
+#bash Run-plink.sh
+
+#mv *VAST VAST/
+
+#T1T2
+plink2 --bfile T1T2_remap --freq --out T1T2_remap
+perl pre_impute.pl -b T1T2_remap.bim -f T1T2_remap.afreq -r PASS.VariantsTOPMED38.tab.gz -h
+bash Run-plink.sh
+mv *T1T2* T1T2/
+
+#P1Tyger
+plink2 --bfile P1Tyger_remap --freq --out P1Tyger_remap
+perl pre_impute.pl -b P1Tyger_remap.bim -f P1Tyger_remap.afreq -r PASS.VariantsTOPMED38.tab.gz -h
+bash Run-plink.sh
+mv *P1Tyger* P1Tyger/
+```
+
+```{bash Concat Chrs}
+bcftools concat T1T2_remap-updated-chr{1..22}.vcf -Oz -o T1T2_concat.vcf.gz
+bcftools concat P1Tyger_remap-updated-chr{1..22}.vcf -Oz -o P1Tyger_concat.vcf.gz
+bcftools concat VAST_remap-updated-chr{1..22}.vcf -Oz -o VAST_concat.vcf.gz
+```
+```{bash Merge studies}
+bcftools index VAST_concat.vcf.gz 
+echo DONE index VAST 
+bcftools index P1Tyger_concat.vcf.gz 
+echo DONE index P1 
+bcftools index T1T2_concat.vcf.gz 
+echo DONE index T1 
+
+#Tested merging of all 3 studies and not enough common snps between, even with updated GSA annotation
+#Merged and QC'd T1 and P1 studies
+
+bcftools merge T1T2_concat.vcf.gz P1Tyger_concat.vcf.gz -Oz -o P1T1.vcf.gz
+plink2 --vcf P1T1.vcf.gz --max-alleles 2 --keep-allele-order --make-bed --out P1T1
+
+plink2 --bfile P1T1 --geno 0.1 --mind 0.1 --make-bed --out P1T1_qc
+plink2 --bfile P1T1_qc --geno 0.05 --make-bed --out P1T1_qc2
+
+#Keep VAST separate
+
+#Investigated difference in subsequent merge
+#Of these, 437,406 are new, while 153,095 are present in the base dataset.
+#Only 150,000 common SNPs between studies
+#Therefore impute separately then merge
+
+plink2 --vcf VAST_concat.vcf.gz --max-alleles 2 --keep-allele-order --make-bed --out VAST
+plink2 --bfile VAST --geno 0.1 --mind 0.1 --make-bed --out VAST_qc
+plink2 --bfile VAST_qc --geno 0.05 --make-bed --out VAST_qc2
+
+#Update GSA annotation in r
+r VP_bim$V2 <- str_replace(VP_bim$V2, "GSA-", "")
+r write.table(file="VAST_qc2.bim", VP_bim, sep = "\t", quote=F, row.names = F, col.names = F)
+
+#Recheck merge
+plink --bfile VAST_qc2 --bmerge P1T1_qc2 --out merge
+
+#See log files for more info
+
+```
+```{bash Format for TopMed}
+bash topmed_prep.sh
+```
 
