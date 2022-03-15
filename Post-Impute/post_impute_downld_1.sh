@@ -6,7 +6,7 @@
 
 #Unzip
 
-for f in *.zip; do unzip -P "vPFwBegJFr26kX" -d  ~/GWAS/all_enteric/P1T1merge/post-imp $f; done
+for f in *.zip; do unzip -P "ZwsPt8ab0GYrdU" -d  ~/GWAS/all_enteric/P1T1merge/post-imp $f; done
 
 echo Unzip DONE
 

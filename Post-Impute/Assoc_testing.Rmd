@@ -1,0 +1,141 @@
+---
+title: "Assoc_Testing"
+author: "Mari Johnson"
+date: "11/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc')
+```
+
+#metadata
+```{r Check IDs}
+
+#check sample IDs in fam file
+
+fam <- fread("enteric.fam")
+#need to remove first number and delimiter
+fam <- fam %>% mutate(Split_ID = str_extract(V2, "(?<=_).*"))
+#look behind ?<= underscore _ #Do for any characters . #As many times *
+
+#Update fam file V2 col
+
+fam <- fam %>% select(V1, Split_ID, V3, V4, V5, V6)
+
+write.table(file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/enteric.fam", fam, row.names = F, col.names = F, quote=F, sep="\t")
+
+```
+
+```{r Get metadata}
+covar <- fread("~/GWAS_22/new_gwas/meta/covar.txt")
+pheno <- fread("~/GWAS_22/new_gwas/meta/pheno.txt")
+
+#318 entries
+
+#Check Metadata for missing samples/Nas
+
+#Update fam names ##
+#load ID df, only keep Genotyping ID and CAT_ID
+ID <- read.csv("~/GWAS_22/new_gwas/meta/new_genoID_march.csv")
+
+#473 entries
+ID <- distinct(ID) #removed 5 rows 468 rows remaining
+
+#leftt join ID df to covar and pheno
+pheno2 <- left_join(pheno, ID, by = "GENOTYPING_ID")
+#74 and 103 need a genotyping ID in fam file?
+covar2 <- left_join(covar, ID, by = c("GENOTYPING_ID", "Study"))
+
+#CHECK in big table for missing P1 IDs
+
+missing <- anti_join(pheno, ID, by = "GENOTYPING_ID")
+missing_covar <- anti_join(covar, ID, by = "GENOTYPING_ID")
+
+#4 IDs in pheno that aren't in #Updated now only missing 2
+
+na_pheno <- pheno2 %>% filter(is.na(Diagnosed))
+na_covar <- covar2 %>% filter(is.na(Study)) #6 rows remaing
+
+#3 samples found
+#3 samples have no data, must have withdrawn from study
+#Updated covar and pheno files for 41, 103, and 74 
+#Also corrected P1 Ids
+#Samples 121, 73 no geno info
+#Other samples just lack linking IDs
+
+#reorder cols so CAT_ID replaces geno_ID for VAST
+ID <- read.csv("~/GWAS_22/new_gwas/meta/new_genoID_march.csv")
+#fam file has cat_IDs (as we updated vast geno IDs to prevent duplicates)
+#if we join to pheno by geno Ids > duplicates
+#Add a study column to new_genoIDs
+
+
+#End goal:
+#Pheno ID and Covar IDs need to be updated with catID column 
+#cat IDs are used in fam file
+#Also joining info is in the newIDs file
+
+#need a study column in IDs then can join to covars
+#cp columns over into pheno file (once ordered)
+
+#look ahead as we are looking ahead FROM the pattern searched for (-)
+ ID <- ID %>% mutate(Study = str_extract(META_ID, "\\w*(?=-)"))
+
+#just need genotyping ID CAT ID and study
+
+join <- dplyr::select(ID, GENOTYPING_ID, cat_IID, Study)
+
+covar3 <- left_join(covar, ID, by = c("GENOTYPING_ID", "Study"))
+
+```
+
+```{r Update PATCH IDs}
+#Plan:
+#link the people who were rechallenged in PATCH with their previous IDs from the studies they were originally challenged in.
+
+#Linking info found
+#Join genoIDs march by Participant ID, new column prev ID has the info
+#Will then need to duplicate entries in PLINK or VCF files (including the geno info
+#New dup geno ID will be prev_ID plus _2 to signify duplicated entry)
+#DOuble check there aren't any duplicates between them
+There are duplicates between T1 and P1, merge with genotyping ID table by study as well
+#Update PLINK files
+#Update genotyping ID to include these additional entries Prev_ID_2 for the rechallenge samples
+#Extra pheno will be the PATCH diagnosis info and covars for these samples
+#make sure covar has prev challenge added
+#Tempted to make new var if the prev challenge was homo or heterologous
+#so covar one is prev challenge = P or T
+#prev_challenge type = homo or hetero
+
+#Load linking info 
+
+link <- fread("~/GWAS_22/new_gwas/meta/patch_linking_IDs.csv")
+
+link <- select(link, PARTICIPANT_ID, Prev_ID, Study)
+
+#Join genoIDs march by Participant ID, new column prev ID has the info
+
+link$Study<- as.factor(link$Study)
+ID$Study <- as.character(ID$Study)
+
+new_IDs <- left_join(ID, link, by = c("PARTICIPANT_ID"))
+
+#Participant ID should match to unique participant IDs in PATCH
+#65 matches :)
+
+new_IDs <- distinct(new_IDs) #removed 9 rows
+
+                     
+#Matched all 65 rows :) #extra 10 rows (where dups were) so need to also match by study
+
+#What I could do is duplicate the whole merged imputed data set files
+#Get list of old names and new names with_dup
+#rename the samples with update names function
+#Update pheno file
+#Select for just these samples
+#Concatenate with existing data-set
+then concatenate
+```
+
