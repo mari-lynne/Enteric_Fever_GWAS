@@ -18,9 +18,10 @@ library(tidylog)
 
 #Download and check files ####
 
-wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/snp151Common.txt.gz 
+wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/snp151.txt.gz 
 #dbsnp 153 is latest build sort for common snps however there is no ftp link yet
 #Online version will crash so use 151 (2017) for now
+#Redo not just with common snps
 
 rs_full <- fread("snp151Common.txt")
 bim_check <- fread("all_enteric_QC.bim")
