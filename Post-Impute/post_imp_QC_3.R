@@ -133,7 +133,7 @@ Outcome[grep("1", pca$IID)] <- "No Typhoid"
 pca2 <- as_tibble(data.frame(pca, Outcome, Challenge, Sex))
 
 # Convert to percentage variance explained
-pve <- data.frame(PC = 1:10, pve = eigenval/sum(eigenval)*100)
+pve <- data.frame(PC = 1:10, pve = (eigenval/sum(eigenval)*100))
 
 library(ggplot2)
 
@@ -373,6 +373,6 @@ table2 <- table %>% dplyr::select(-c(REF.x, ALT.x, CHR, OBS_CT))
 
 table2 <- table %>% mutate(count_alt = (ALT_CTS/MAF_U)*100)
 
-                 #TFCAR gene 54874231..54874231
+                 #TFCAR gene 54874231..54874231 54874231..
 #./plink2 --bfile all_enteric_LD --chr 19 --from-bp 54874231 --to-bp 54874231 --pheno pheno_rn2.txt --pheno-name Diagnosed --covar covar_rn2.txt --covar-variance-standardize --covar-name Age, Sex, Challenge, Vaccine, Dose --logistic --freq case-control --out Fcar
 

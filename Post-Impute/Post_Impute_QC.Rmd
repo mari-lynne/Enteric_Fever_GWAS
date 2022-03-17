@@ -7,7 +7,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc')
+#Assoc folder switched to after merging
 ```
 
 ```{r Set UP}
@@ -24,7 +25,8 @@ path2plink <- "/home/mari/bin/plink"
 
 ```
 
-```{r}
+### PlinkQC plots
+```{r PlinkQC plots}
 fail_markers <- perMarkerQC(indir=indir, qcdir=qcdir, name=name,
                             path2plink=path2plink, mafTh = 0.05,
                             verbose=TRUE, interactive=TRUE,
@@ -33,40 +35,103 @@ fail_markers$p_markerQC
 
 ```
 
-
+```{bash QC VAST PATCH GWAS}
 plink2 --bfile VAST_concat --geno 0.1 --mind 0.1 --make-bed --out VAST_imp_QC
 plink2 --bfile VAST_imp_QC --geno 0.05 --mind 0.05 --maf 0.01 --make-bed --out VAST_imp_QC2
 
 #filter SNPs that are missing from 0.1% of individuals
-#0 varients removed? Is this because I filtered pre-imputation, gives better imputation accuract
+#0 varients removed due to geno? Is this because I filtered pre-imputation, gives better imputation accuracy
+```
+16873950 variants loaded from VAST_imp_QC.bim.
+7396147 variants removed due to allele frequency threshold(s)
+947,7803 variants remaining after main filters.
 
-plink2 --bfile maf_filtered_data \
-     --hwe 1e-25 keep-fewhet \
-     --make-bed \
-     --out hwe_filtered_data
-
+```{bash P1 T1 QC}
 plink2 --bfile P1T1 --geno 0.1 --mind 0.1 --make-bed --out P1T1_imp_QC
 plink2 --bfile P1T1_imp_QC --geno 0.05 --mind 0.05 --maf 0.01 --make-bed --out P1T1_imp_QC2
 #SNPs missing from 5% of population MAF <5 %
 #So out of 340 the SNPs would have to be in 12 people
 #10% cut off is probably better for assoc analysis in 34 people
 
+```
 7944509 variants removed due to allele frequency threshold(s)
-(--maf/--max-maf/--mac/--max-mac).
 895,0259 variants remaining after main filters.
 ((16894768 - 7944509)/16894768)*100 = 52% removed
 
-#VAST
 
-16873950 variants loaded from VAST_imp_QC.bim.
-7396147 variants removed due to allele frequency threshold(s)
-(--maf/--max-maf/--mac/--max-mac).
-947,7803 variants remaining after main filters.
-
-#merge
-
+### Merge
+```{bash Merge VAST_PATCH and P1T1}
 plink --bfile VAST_imp_QC2 --bmerge P1T1_imp_QC2 --out enteric
 #This has mostly worked!! 9 million SNPs imputed
+```
 
+### Include Rechallenge Data
+
+```{bash Include rechallenge data}
+#see ID_updates_march.R script
+#output is all_enteric plink files
+
+plink2 --bfile all_enteric --geno 0.1 --hwe 0.000001 --make-bed --out all_enteric_QC
+plink2 --bfile all_enteric_QC --geno 0.05 --maf 0.01 --make-bed --out all_enteric_QC2
+
+#Rs Ids then updated in pos2rsID.R
+```
+
+### PCA
+
+- Use a PCA to account for population structure in data
+- Check ancestry first by plotting PCA and colour coding by ethnicity
+- Can also merge with public population databases
+
+- Include PCA's as covariates in assocation model
+
+```{bash Run PCA}
+plink2 --bfile all_enteric_QC2 --pca
+```
+```{r Set up PCA in R}
+pca <- fread("plink2.eigenvec")
+library("ggplot2")
+
+ggplot(pca, aes(PC1,PC2)) + geom_point()
+eigenval <- fread("plink2.eigenval")
+
+#Colour by ethnicity
+
+covar <- fread("all_covar_num.txt")
+
+pca_covar <- left_join(pca, covar, by = "IID")
+#matched 335 rows, 13 rows in x without a match, 11 rows in covar without a match?
+missing <- anti_join(pca, covar, by = "IID")
+extra_covar <- anti_join(covar, pca, by = "IID")
+#Need to add extra 00s for T2 samples in covar file
+#now 8 rows missing from covar, probs deleted participants plus the samples we couldn't find covar or pheno info for anywhere
+#Double check repeat samples later
+
+pca_covar$Ethnicity <- as.factor(pca_covar$Ethnicity)
+levels(pca_covar$Ethnicity)
+#merge white british into one factor
+
+pca_covar$Ethnicity <- recode_factor(pca_covar$Ethnicity, "White British" = "White (British)")
+pca_covar <- pca_covar %>% mutate_all(na_if,"")
+
+#Plot PCA coloured by ethnicity
+pca_covar %>% ggplot(aes(PC1,PC2, color=Ethnicity)) + geom_point()
+
+#Calculate Percentage variance explained
+
+pve <- data.frame(PC = 1:10, pve = round(eigenval/sum(eigenval)*100,2))
+
+colnames(pve) <- c("PC", "pve")
+pve$PC <- as.factor(pve$PC)
+
+p <- pve %>% ggplot(aes(x=PC,y=pve, fill = PC)) + geom_col()
+p + labs(x = "Principle Component", y = "Percentage Varience Explained")
+#Include first 5 PC's
+
+#Make new covar file to use
+
+write.table(pca_covar, file = "pca_covar.txt", row.names = F, quote = F, sep = "\t")
+
+```
 
 
