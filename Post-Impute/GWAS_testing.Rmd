@@ -5,88 +5,103 @@ date: "16/03/2022"
 output: html_document
 ---
 
+### Introduction
+
+In this document is code for running association tests using genotyping data in Plink\
+Association testing is performed with plink and the results will be visualised using R\
+
+
+### Aims
+
+1.  Run association tests of enteric fever challenge data across all enteric fever studies - typhoid and paratyphoid combined
+  - Visualise GWAS results using a Manhattan Plot
+2. Associate the Fc receptor region SNPs with enteric fever
+3. Run association tests for paratyphoid and typhoid separately 
+
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE)
 knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
 ```
-
-```{r}
+Load Packages
+```{r load, eval=TRUE}
 library(data.table)
 library(tidylog)
 library(dplyr)
 library(stringr)
+library(qqman)
 ```
-
-
 ### GWAS
 
-```{bash}
-#Test GWAS with PCA
+- Run enteric fever GWAS with PCA as covariates
 
+```{bash GWAS}
 plink2 --bfile all_enteric_QC2 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out enteric_assoc
-
 ```
 
-```{r Plot Assoc Results}
-library(qqman)
+```{r Plot Assoc Results, eval = TRUE}
 
 gwas <- fread("enteric_assoc.Diagnosed.glm.logistic.hybrid")
 
+#rename cols for qqman
 colnames(gwas) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
                            "LOG(OR)_SE","Z_STAT","P","ERRCODE")
 
-
 gwas$TEST <- as.factor(gwas$TEST)
-gwas<- filter(gwas, TEST == "ADD")
+gwas<- filter(gwas, TEST == "ADD") #Keep just genetic testing
 
-#gwasResults <- dplyr::select(gwasResults, SNP, CHR, BP, P)
-
-manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "skyblue"), highlight = snpsOfInterest)
+#Plot Manhattan
+manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "skyblue"))
 
 #Inspect top snps:
 
 tophits <- filter(gwasResults, P < 10e-5)
-
+head(tophits)
 ```
 ### FcyR Region
 
+- Run association test just for FcyR SNPs on chromosome 1
 ```{bash FcYR assoc}
-plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out fcy
+#Apply maf filter
+#maf requires snps to be in 10% of population
+plink2 --bfile all_enteric_QC --maf 0.1 --make-bed --out all_enteric_QC2
+#4,942,013 variants remaining after main filters
 
-#Also use to get list of snps to highlight
-#fcy.Diagnosed.glm.logistic.hybrid 
+#Make FcyR file
+plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
+
+#Run Assoc
+plink2 --bfile fcyr --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out fcy
 ```
 
-```{r Plot Fcy Results}
+```{r Plot Fcy Results, eval = TRUE}
 gwasResults <- fread("fcy.Diagnosed.glm.logistic.hybrid")
 
-colnames(gwasResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
-                           "LOG(OR)_SE","Z_STAT","P","ERRCODE")
+colnames(gwasResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        "LOG(OR)_SE","Z_STAT","P","ERRCODE")
 
 gwasResults$TEST <- as.factor(gwasResults$TEST)
 gwasResults <- filter(gwasResults, TEST == "ADD")
 
 
 #make character vector for Fcy
-
 snpsOfInterest <- as.vector(gwasResults$SNP)
-str(snpsOfInterest)
 
+#Sig SNPs
 fcy_sig <- filter(gwasResults, P <= 0.05)
+head(fcy_sig)
 
 ```
 
 ### FcaR
-```{bash FcYR assoc}
-# +/- 10kb from gene co-oridnates 54874231 --to-bp 54891420
-plink2 --bfile all_enteric_QC2 --chr 19 --from-bp 54864231 --to-bp 54901420 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out fcar
-#191,448 out of 8,457,231 variants loaded from all_enteric_QC2.bim #due to maf
 
-#Exclude homozygous re-infection covars TT, PP
+- FcaR is on chromosome 19, run extra association analysis
 
+```{bash FcaR assoc}
+# +/- 10kb from gene co-oridnates chr19 54874231 --to-bp 54901420
+plink2 --bfile all_enteric_QC2 fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out fcar
 ```
 
-```{r Plot Fcar Results}
+```{r Plot Fcar Results, eval=TRUE}
 fcarResults <- fread("fcar.Diagnosed.glm.logistic.hybrid")
 
 colnames(fcarResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
@@ -96,129 +111,6 @@ fcarResults$TEST <- as.factor(fcarResults$TEST)
 fcarResults <- filter(fcarResults, TEST == "ADD")
 
 fcar_sig <- filter(fcarResults, P <= 0.05)
-
+head(fcar_sig)
 ```
 
-### Annotate FcY SNPs
-```{r nexus annotation}
-
-#Plan
-#make annotation file for https://www.snp-nexus.org/v4/guide/
---chr 1 --from-bp 161505430 --to-bp 161678022
-#Remake enteric bim file without the rs IDs (*fix later)
-#Use snp nexus online tool for now which will also give rs IDs as an output 
-#Later integrate data from USCS using mySQL
-#Assoc analysis exclude PP TT people 
-
-```
-```{bash redo gwas}
-plink2 --bfile all_enteric_QC --maf 0.1 --make-bed --out all_enteric_QC2
-#4,942,013 variants remaining after main filters
-#maf requires snps to be in 10% of population
-
-#make fcy file
-plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
-
-#make fcar file 
-plink2 --bfile all_enteric_QC2 --chr 19 --from-bp 54864231 --to-bp 54901420 -make-bed --out fcar
-
-#Do with same of topsnps list
-
-#fcyr assoc
-#--remove-if <phenotype/covariate name> <operator> <value>
-#Re_Challenge = 5, 2 #will this remove og challenge tho? No
-
-plink2 --bfile fcyr --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy
-
-#fcar assoc
-
-plink2 --bfile fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcar
-
-```
-
-```{r write nexus snp list}
-
-sigsnps <- rbind(fcar_sig, fcy_sig)
-
-#Type	Id	Position	Alelle1	Allele2	Strand
-
-
-nexus <- select(sigsnps, CHR, BP, REF, ALT)
-
-nexus <- mutate(nexus, strand = rep(1, 35))
-nexus <- mutate(nexus, Type = rep("Chromosome", 35))
-
-nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand)
-
-write.table(nexus, "sig_snps", row.names = F, col.names = F, quote = F)
-
-#Then need to find what these snps are in LD with 
-
-```
-
-```{r format annotation data}
-
-#Read in data
-temp = list.files(pattern="*.txt")
-myfiles = lapply(temp, fread)
-#add names to files  - names(myfiles) <- temp
-trim <- str_extract(temp, ".{4,}?")
-names(myfiles) <- trim
-
-#Unlist files
-list2env((myfiles), envir = .GlobalEnv)
-
-?dplyr::select
-library(dplyr)
-
-#ID file ####
-ID <- gen_
-rm(gen_)
-
-ID <- ID[,1:6]
-
-#Predicted ensembl function ####
-ense <- ense %>% dplyr::select(`Variation ID`, Variant, Symbol, `Predicted Function`) %>% distinct()
-
-#ense <- ense[, c("Variation ID", "Variant", "Symbol", "Predicted Function")] %>% distinct()
-ense2 <- ense %>% filter(`Predicted Function` != "intronic")
-
-#collapse by ID
-ense2 <- ense %>%
-  group_by(`Variation ID`, Variant, Symbol) %>%
-  summarise(`Predicted Function` = toString(`Predicted Function`))
-
-#Reg elements ####
-
-str(road)
-road$Epigenome <- as.factor(road$Epigenome)
-levels(road$Epigenome)
-
-road2 <- road %>% filter(str_detect(road$Epigenome, "B cell|CD4|CD8|T cell|Monocyte|Neutrophil|myeloid|Natural Killer|Spleen"))
-
-```
-
-```{r Joining tables}
-
-annote <- left_join(ense2, ID, by = "Variation ID") %>%
-    left_join(.,cadd, by = "Variation ID") %>%
-  left_join(., funs, by = "Variation ID") %>% select(-ends_with(".y")) %>% select(-ends_with(".x"))
-
-gwas_hits <- left_join(gwas, annote, by ="Variation ID")
-#chr1:161630802:A/G:1
-```
-Top SNP has come out as significant for GWAS, reduces IgG levels in Iceland study
-gtEX G increases FcGR2B expression - it is an inhibitory receptor
-Low affinity receptor. Involved in a variety of effector and regulatory functions such as phagocytosis of immune complexes and modulation of antibody production by B-cells. Binding to this receptor results in down-modulation of previous state of cell activation triggered via antigen receptors on B-cells (BCR), T-cells (TCR) or via another Fc receptor. Isoform IIB1 fails to mediate endocytosis or phagocytosis. Isoform IIB2 does not trigger phagocytosis.
-
-#fcar snp associated with protection
-#A snp increased kir expression whole blood, can recognise bacterial epitopes
-
-```{r gtEX}
-#query for whole blood
-
-```
-
-#next steps
-
-#Run small cis-eqtl analysis based on 

@@ -5,13 +5,13 @@ date: "11/03/2022"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, include=FALSE, eval=TRUE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc')
 #Assoc folder switched to after merging
 ```
 
-```{r Set UP}
+```{r Set up, eval=TRUE}
 library(data.table)
 library(stringr)
 library(dplyr)
@@ -26,7 +26,7 @@ path2plink <- "/home/mari/bin/plink"
 ```
 
 ### PlinkQC plots
-```{r PlinkQC plots}
+```{r PlinkQC plots, eval=FALSE}
 fail_markers <- perMarkerQC(indir=indir, qcdir=qcdir, name=name,
                             path2plink=path2plink, mafTh = 0.05,
                             verbose=TRUE, interactive=TRUE,
@@ -88,7 +88,7 @@ plink2 --bfile all_enteric_QC --geno 0.05 --maf 0.01 --make-bed --out all_enteri
 ```{bash Run PCA}
 plink2 --bfile all_enteric_QC2 --pca
 ```
-```{r Set up PCA in R}
+```{r Set up PCA in R, eval=TRUE}
 pca <- fread("plink2.eigenvec")
 library("ggplot2")
 
@@ -126,12 +126,12 @@ pve$PC <- as.factor(pve$PC)
 
 p <- pve %>% ggplot(aes(x=PC,y=pve, fill = PC)) + geom_col()
 p + labs(x = "Principle Component", y = "Percentage Varience Explained")
-#Include first 5 PC's
-
 #Make new covar file to use
-
-write.table(pca_covar, file = "pca_covar.txt", row.names = F, quote = F, sep = "\t")
+#write.table(pca_covar, file = "pca_covar.txt", row.names = F, quote = F, sep = "\t")
 
 ```
 
+### Conclusions
+
+- Include first 5 PC's as covariates in association analysis
 
