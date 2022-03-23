@@ -1,69 +1,32 @@
 ---
-title: "Annotation"
+title: "SNP Annotation"
 author: "Mari Johnson"
 date: "23/03/2022"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ### Annotate FcY SNPs
-```{r nexus annotation}
 
-#Plan
-#make annotation file for https://www.snp-nexus.org/v4/guide/
---chr 1 --from-bp 161505430 --to-bp 161678022
-#Remake enteric bim file without the rs IDs (*fix later)
-#Use snp nexus online tool for now which will also give rs IDs as an output 
-#Later integrate data from USCS using mySQL
-#Assoc analysis exclude PP TT people 
-
-```
-```{bash redo gwas}
-plink2 --bfile all_enteric_QC --maf 0.1 --make-bed --out all_enteric_QC2
-#4,942,013 variants remaining after main filters
-#maf requires snps to be in 10% of population
-
-#make fcy file
-plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
-
-#make fcar file 
-plink2 --bfile all_enteric_QC2 --chr 19 --from-bp 54864231 --to-bp 54901420 -make-bed --out fcar
-
-#Do with same of topsnps list
-
-#fcyr assoc
-#--remove-if <phenotype/covariate name> <operator> <value>
-#Re_Challenge = 5, 2 #will this remove og challenge tho? No
-
-plink2 --bfile fcyr --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy
-
-#fcar assoc
-
-plink2 --bfile fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcar
-
-```
-
+##### **Plan**
+- Make annotation file for https://www.snp-nexus.org/v4/guide/
+- Remake enteric bim file without the rs IDs (*fix later)
+- Use snp nexus online tool for now which will also give rs IDs as an output 
+- Later integrate data from USCS using mySQL
+ 
+### Write nexus snp list
 ```{r write nexus snp list}
 
-sigsnps <- rbind(fcar_sig, fcy_sig)
-
-#Type	Id	Position	Alelle1	Allele2	Strand
-
+sigsnps <- rbind(fcar_sig, fcy_sig) #From assoc analysis
 
 nexus <- select(sigsnps, CHR, BP, REF, ALT)
-
 nexus <- mutate(nexus, strand = rep(1, 35))
 nexus <- mutate(nexus, Type = rep("Chromosome", 35))
-
 nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand)
 
 write.table(nexus, "sig_snps", row.names = F, col.names = F, quote = F)
@@ -71,10 +34,13 @@ write.table(nexus, "sig_snps", row.names = F, col.names = F, quote = F)
 #Then need to find what these snps are in LD with 
 
 ```
+### Format Annotation data
 
+- Upload SNP list to SNPNexus
+- Results in various annotation files
+- Download snp annotation results as .txt files and read into R 
 
-
-```{r format annotation data}
+```{r Format Annotation data}
 
 #Read in data
 temp = list.files(pattern="*.txt")
@@ -82,15 +48,11 @@ myfiles = lapply(temp, fread)
 #add names to files  - names(myfiles) <- temp
 trim <- str_extract(temp, ".{4,}?")
 names(myfiles) <- trim
-
 #Unlist files
 list2env((myfiles), envir = .GlobalEnv)
 
-?dplyr::select
-library(dplyr)
-
 #ID file ####
-ID <- gen_
+ID <- gen_ #contains file of nearest gene to the snps
 rm(gen_)
 
 ID <- ID[,1:6]
@@ -98,7 +60,6 @@ ID <- ID[,1:6]
 #Predicted ensembl function ####
 ense <- ense %>% dplyr::select(`Variation ID`, Variant, Symbol, `Predicted Function`) %>% distinct()
 
-#ense <- ense[, c("Variation ID", "Variant", "Symbol", "Predicted Function")] %>% distinct()
 ense2 <- ense %>% filter(`Predicted Function` != "intronic")
 
 #collapse by ID
@@ -106,37 +67,48 @@ ense2 <- ense %>%
   group_by(`Variation ID`, Variant, Symbol) %>%
   summarise(`Predicted Function` = toString(`Predicted Function`))
 
-#Reg elements ####
+#Regulatory Elements ####
 
+#reg elements downloaded from roadmap project via snpnexus 
 str(road)
 road$Epigenome <- as.factor(road$Epigenome)
 levels(road$Epigenome)
 
+#Contains many tissue eQTLs, #Filter for blood 
 road2 <- road %>% filter(str_detect(road$Epigenome, "B cell|CD4|CD8|T cell|Monocyte|Neutrophil|myeloid|Natural Killer|Spleen"))
 
 ```
 
-```{r Joining tables}
-
-annote <- left_join(ense2, ID, by = "Variation ID") %>%
-    left_join(.,cadd, by = "Variation ID") %>%
-  left_join(., funs, by = "Variation ID") %>% select(-ends_with(".y")) %>% select(-ends_with(".x"))
-
-gwas_hits <- left_join(gwas, annote, by ="Variation ID")
-#chr1:161630802:A/G:1
-```
-Top SNP has come out as significant for GWAS, reduces IgG levels in Iceland study
-gtEX G increases FcGR2B expression - it is an inhibitory receptor
-Low affinity receptor. Involved in a variety of effector and regulatory functions such as phagocytosis of immune complexes and modulation of antibody production by B-cells. Binding to this receptor results in down-modulation of previous state of cell activation triggered via antigen receptors on B-cells (BCR), T-cells (TCR) or via another Fc receptor. Isoform IIB1 fails to mediate endocytosis or phagocytosis. Isoform IIB2 does not trigger phagocytosis.
-
-#fcar snp associated with protection
-#A snp increased kir expression whole blood, can recognise bacterial epitopes
-
-```{r gtEX}
+```{r gtEX, echo = FALSE}
 #query for whole blood
 
 ```
 
-#next steps
+```{r Joining tables}
+#Join all of the annotation tables by their snp rs - Variation ID
+#., allows you to pipe in previous table from left join
+annote <- left_join(ense2, ID, by = "Variation ID") %>%
+    left_join(.,cadd, by = "Variation ID") %>%
+  left_join(., funs, by = "Variation ID") %>%
+  select(-ends_with(".y")) %>% select(-ends_with(".x")) #clean names
+gwas_hits <- left_join(gwas, annote, by ="Variation ID")
+#chr1:161630802:A/G:1
+```
+### Results
 
-#Run small cis-eqtl analysis based on 
+##### FcGR Notes:
+- Top SNP associated with enteric fever, chr1:161630802:A/G:1, has come out as significant for GWAS, reduces IgG levels in Iceland study
+- In gtEX database it increases FcGR2B expression - which is an inhibitory receptor
+- FcGR2B, is a Low affinity receptor. Involved in a variety of effector and regulatory functions such as phagocytosis of immune complexes and modulation of antibody production by B-cells. Binding to this receptor results in down-modulation of previous state of cell activation triggered via antigen receptors on B-cells (BCR), T-cells (TCR) or via another Fc receptor. Isoform IIB1 fails to mediate endocytosis or phagocytosis. Isoform IIB2 does not trigger phagocytosis.
+
+#### FcaR notes
+
+- Top Fcar snp associated with protection
+- This snp  has been shown to increased kir expression whole blood, can recognise bacterial epitopes
+
+### Next steps
+
+- Plot annotation of snps using tracks
+- Update fcgr, fcar, and top snps names in plink using an annotation file from snp nexus (eventually get sql query to work)
+- Plot typhoid fever by genotype (find old scripts for this)
+- Run eqtl analysis of top snps with gene expression following challenge
