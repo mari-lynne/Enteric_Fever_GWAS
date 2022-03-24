@@ -1,5 +1,5 @@
 ---
-title: "GWAS_testing"
+title: "GWAS and Candidate Gene Associations with Enteric Fever"
 author: "Mari Johnson"
 date: "16/03/2022"
 output: html_document
@@ -35,7 +35,7 @@ library(qqman)
 
 - Run enteric fever GWAS with PCA as covariates
 
-```{bash GWAS}
+```{bash GWAS Enteric fever}
 plink2 --bfile all_enteric_QC2 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy--covar-variance-standardize --glm --out enteric_assoc
 ```
 
@@ -55,10 +55,10 @@ manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, c
 
 #Inspect top snps:
 
-tophits <- filter(gwasResults, P < 10e-5)
+tophits <- filter(gwas, P < 10e-5)
 head(tophits)
-#write top hits file 
-
+#Write top hits file 
+write.table(tophits, file = "tophits.txt",quote = F, row.names= F, sep = "\t")
 ```
 ### FcyR Region
 
@@ -100,7 +100,7 @@ head(fcy_sig)
 
 ```{bash FcaR assoc}
 # +/- 10kb from gene co-oridnates chr19 54874231 --to-bp 54901420
-plink2 --bfile all_enteric_QC2 fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcar
+plink2 --bfile fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcar
 ```
 
 ```{r Plot Fcar Results, eval=TRUE}
@@ -122,9 +122,9 @@ head(fcar_sig)
 - Run GWAS just looking at associations with either typhoid or paratyphoid fever
 - keep-if option in plink seems to be limited to one condition therefore make just typhoid and just paratyphoid covar files = Challenge = T, filter rechallenge != TT
 
-```{r make covar files}
+```{r Make Covar Files}
 
-#Key: ####
+#Key: ##
 #Strain: C, P = 3, T = 1, TN = 2
 #Sex M=1, F=2
 #Re-challenge N=1, PP=2, PT=3, TP=4, TT=5
@@ -148,4 +148,67 @@ write.table(P_pheno, file = "P_covar.txt", quote = F, row.names= F, sep = "\t")
 T_pheno[,c(1,2,29)] %>% write.table(file = "T_pheno.txt", quote = F, row.names= F, sep = "\t")
 P_pheno[,c(1,2,29)] %>% write.table(file = "P_pheno.txt", quote = F, row.names= F, sep = "\t")
 ```
+```{bash Just Typhoid Assoc}
 
+plink2 --bfile all_enteric_QC2 --pheno T_pheno.txt --pheno-name Diagnosed --covar T_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out typhoid
+```
+```{r Plot Typhoid Results}
+
+T_gwas <- fread("typhoid.Diagnosed.glm.logistic.hybrid")
+
+colnames(T_gwas) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
+                           "LOG(OR)_SE","Z_STAT","P","ERRCODE")
+
+T_gwas$TEST <- as.factor(T_gwas$TEST)
+T_gwas<- filter(T_gwas, TEST == "ADD") #Keep just genetic testing
+
+#Plot Manhattan
+manhattan(T_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkslategray3"))
+
+#Inspect top snps:
+T_tophits <- filter(T_gwas, P < 10e-5)
+T_tophits <- T_tophits[order(P),]
+head(T_tophits)
+#write file 
+write.table(T_tophits, file = "T_tophits.txt",quote = F, row.names= F, sep = "\t")
+```
+
+```{bash Just Paratyphoid Assoc}
+plink2 --bfile all_enteric_QC2 --pheno P_pheno.txt --pheno-name Diagnosed --covar P_covar.txt --covar-name Sex, Dose, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out paratyphoid
+```
+```{r Plot Paratyphoid Results}
+#rename cols for qqman
+P_gwas <- fread("paratyphoid.Diagnosed.glm.logistic.hybrid")
+
+colnames(P_gwas) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
+                           "LOG(OR)_SE","Z_STAT","P","ERRCODE")
+
+P_gwas$TEST <- as.factor(P_gwas$TEST)
+P_gwas<- filter(P_gwas, TEST == "ADD") #Keep just genetic testing
+
+#Plot Manhattan
+manhattan(P_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkorchid"))
+
+#Inspect top snps:
+P_tophits <- filter(P_gwas, P < 10e-5)
+P_tophits <- P_tophits[order(P),]
+head(P_tophits)
+#Write file 
+write.table(P_tophits, file = "P_tophits.txt",quote = F, row.names= F, sep = "\t")
+
+```
+```{r Overlay}
+
+#Overlay sig typhoid snps on paratyphoid graph
+#Get list 
+sigsnps <- T_tophits$SNP
+#Plot Manhattan
+manhattan(P_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkorchid"), highlight = sigsnps)
+
+```
+##### Conclusions
+
+- Generally, the top significant hits in typhoid association do not associate with the top snps in the paratyphoid data
+- Typhoid data set looks most clear. 
+- Use Typhoid data for donwstream analysis
+- Paratyphoid study is underpowered but the two snps that do overlap, we could mention that these might represent a 'common' protective pathway as an extension
