@@ -36,7 +36,7 @@ library(qqman)
 - Run enteric fever GWAS with PCA as covariates
 
 ```{bash GWAS}
-plink2 --bfile all_enteric_QC2 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out enteric_assoc
+plink2 --bfile all_enteric_QC2 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy--covar-variance-standardize --glm --out enteric_assoc
 ```
 
 ```{r Plot Assoc Results, eval = TRUE}
@@ -57,6 +57,8 @@ manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, c
 
 tophits <- filter(gwasResults, P < 10e-5)
 head(tophits)
+#write top hits file 
+
 ```
 ### FcyR Region
 
@@ -71,7 +73,7 @@ plink2 --bfile all_enteric_QC --maf 0.1 --make-bed --out all_enteric_QC2
 plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
 
 #Run Assoc
-plink2 --bfile fcyr --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out fcy
+plink2 --bfile fcyr --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy
 ```
 
 ```{r Plot Fcy Results, eval = TRUE}
@@ -98,7 +100,7 @@ head(fcy_sig)
 
 ```{bash FcaR assoc}
 # +/- 10kb from gene co-oridnates chr19 54874231 --to-bp 54901420
-plink2 --bfile all_enteric_QC2 fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out fcar
+plink2 --bfile all_enteric_QC2 fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcar
 ```
 
 ```{r Plot Fcar Results, eval=TRUE}
@@ -112,5 +114,38 @@ fcarResults <- filter(fcarResults, TEST == "ADD")
 
 fcar_sig <- filter(fcarResults, P <= 0.05)
 head(fcar_sig)
+```
+
+
+### Serovar specific GWAS
+
+- Run GWAS just looking at associations with either typhoid or paratyphoid fever
+- keep-if option in plink seems to be limited to one condition therefore make just typhoid and just paratyphoid covar files = Challenge = T, filter rechallenge != TT
+
+```{r make covar files}
+
+#Key: ####
+#Strain: C, P = 3, T = 1, TN = 2
+#Sex M=1, F=2
+#Re-challenge N=1, PP=2, PT=3, TP=4, TT=5
+#Vaccine: NONE = 0, Ty21a = 1, M01ZH09= 2, Vi-PS = 3, Vi-TT= 4
+
+covar <- fread("pca_covar.txt")
+pheno <- fread("all_pheno_num.txt")
+
+typoid <- filter(covar, Challenge == 1|2, Re_Challenge != 5) #348
+para <- filter(covar, Challenge == 3, Re_Challenge != 2) #68
+
+T_pheno <- left_join(typoid, pheno)
+T_nas <- T_pheno %>% filter(is.na(Diagnosed))
+P_pheno <- left_join(para, pheno)
+
+#make new files 
+
+write.table(T_pheno, file = "T_covar.txt", quote = F, row.names= F, sep = "\t")
+write.table(P_pheno, file = "P_covar.txt", quote = F, row.names= F, sep = "\t")
+
+T_pheno[,c(1,2,29)] %>% write.table(file = "T_pheno.txt", quote = F, row.names= F, sep = "\t")
+P_pheno[,c(1,2,29)] %>% write.table(file = "P_pheno.txt", quote = F, row.names= F, sep = "\t")
 ```
 
