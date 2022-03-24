@@ -12,6 +12,9 @@ knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
 
 
 ### Annotate FcY SNPs
+24/03/22
+- Redo annotation with just the typhoid snps
+- Update to include general tophits as well as fcr snps at the same time
 
 ##### **Plan**
 - Make annotation file for https://www.snp-nexus.org/v4/guide/
