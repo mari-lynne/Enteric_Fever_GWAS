@@ -10,17 +10,22 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE, message = FALS
 knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
 ```
 
-### Annotate FcY SNPs
-24/03/22
-- Redo annotation with just the typhoid snps
-- Update to include general tophits as well as fcr snps at the same time
+### Aims
 
-##### **Plan**
-- Make annotation file for https://www.snp-nexus.org/v4/guide/
-- Remake enteric bim file without the rs IDs (*fix later)
-- Use snp nexus online tool for now which will also give rs IDs as an output 
-- Later integrate data from USCS using mySQL
- 
+- Upload SNP list to SNPNexus/VEP
+- Results in various annotation files
+- Download snp annotation results as .txt files and read into R 
+- For candidate gene analysis prioritise and filter SNPs with gtex tissue expression, coding snps etc.
+
+Load Packages:
+```{r Packages}
+library(data.table)
+library(tidylog)
+library(dplyr)
+library(stringr)
+```
+
+
 ### Write nexus snp list
 ```{r write nexus snp list}
 
@@ -28,61 +33,25 @@ fcy_sig <- fread("T_fcy.txt")
 fcar_sig <- fread("T_fcar.txt")
 T_tophits <- fread("T_tophits.txt")
 
-library(dplyr)
-library(stringr)
-
 sigsnps <- rbind(fcar_sig, fcy_sig, T_tophits)#From assoc analysis
 
-nexus <- select(sigsnps, CHR, BP, REF, ALT)
-nexus <- mutate(nexus, strand = rep(1, 111))
-nexus <- mutate(nexus, Type = rep("Chromosome", 111))
-nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand) %>% mutate(BP_1 = BP+1)
+vep <- select(sigsnps, CHR, BP, REF, ALT)
+vep <- mutate(vep, strand = rep(1, 111))
+vep <- mutate(vep, Type = rep("Chromosome", 111))
+vep <- select(vep, Type, CHR, BP, REF, ALT, strand) %>% mutate(BP_1 = BP+1)
 #collapse ref alt by /
 
-nexus <- nexus %>% mutate(refalt = str_c(REF, ALT, sep = "/"))
-vep <- select(nexus, CHR, BP, BP_1, refalt, strand)
+vep <- vep %>% mutate(refalt = str_c(REF, ALT, sep = "/"))
+vep <- select(vep, CHR, BP, BP_1, refalt, strand)
 
-vep$BP_2 <- nexus$BP
+vep$BP_2 <- vep$BP
 
 vep2 <- select(vep, CHR, BP, BP_2, refalt, strand)
 
 write.table(vep, "vep.txt", row.names = F, col.names = F, quote = F, sep = " ")
 write.table(vep2, "vep2.txt", row.names = F, col.names = F, quote = F, sep = " ")
 
-write.table(nexus, "T_sig_snps", row.names = F, col.names = F, quote = F)
-
-#Then need to find what these snps are in LD with 
-
-#snp_nexus is down test using varient effect predictor 
-
-
-```
-```{r}
-
-top_annotate <- fread("annotation/VEP/Top_hits.txt")
-
-```
-
-
-
-
-
-### Format Annotation data
-
-- Upload SNP list to SNPNexus
-- Results in various annotation files
-- Download snp annotation results as .txt files and read into R 
-
-##### Updates 24/03/22
-SNP nexus down, and getting snps from mysql was on list of things to do anways
-
-Steps:
-- Install MariaDb (MySQL) client libraries on your computer
-- mysql --user=genome --host=genome-euro-mysql.soe.ucsc.edu -A -P 3306
-- Login to server then access database 
-
-```{sql connection=}
-
+#Then need to find what these snps are in LD with
 ```
 
 ```{r Format Annotation data}
