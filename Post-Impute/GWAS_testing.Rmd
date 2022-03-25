@@ -73,24 +73,25 @@ plink2 --bfile all_enteric_QC --maf 0.1 --make-bed --out all_enteric_QC2
 plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
 
 #Run Assoc
-plink2 --bfile fcyr --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy
+plink2 --bfile fcyr --pheno T_pheno.txt --pheno-name Diagnosed --covar T_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_fcy
 ```
 
 ```{r Plot Fcy Results, eval = TRUE}
-gwasResults <- fread("fcy.Diagnosed.glm.logistic.hybrid")
+gwasResults <- fread("T_fcy.Diagnosed.glm.logistic.hybrid") #previous enteric version is just fcy
 
 colnames(gwasResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        "LOG(OR)_SE","Z_STAT","P","ERRCODE")
 
 gwasResults$TEST <- as.factor(gwasResults$TEST)
 gwasResults <- filter(gwasResults, TEST == "ADD")
 
-
 #make character vector for Fcy
 snpsOfInterest <- as.vector(gwasResults$SNP)
 
 #Sig SNPs
 fcy_sig <- filter(gwasResults, P <= 0.05)
-head(fcy_sig)
+
+#write file 
+write.table(fcy_sig, file = "T_fcy.txt", quote = F, row.names= F, sep = "\t")
 
 ```
 
@@ -100,11 +101,11 @@ head(fcy_sig)
 
 ```{bash FcaR assoc}
 # +/- 10kb from gene co-oridnates chr19 54874231 --to-bp 54901420
-plink2 --bfile fcar --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcar
+plink2 --bfile fcar --pheno T_pheno.txt --pheno-name Diagnosed --covar T_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_fcar
 ```
 
 ```{r Plot Fcar Results, eval=TRUE}
-fcarResults <- fread("fcar.Diagnosed.glm.logistic.hybrid")
+fcarResults <- fread("T_fcar.Diagnosed.glm.logistic.hybrid")
 
 colnames(fcarResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
                            "LOG(OR)_SE","Z_STAT","P","ERRCODE")
@@ -114,9 +115,10 @@ fcarResults <- filter(fcarResults, TEST == "ADD")
 
 fcar_sig <- filter(fcarResults, P <= 0.05)
 head(fcar_sig)
+
+#write file 
+write.table(fcar_sig, file = "T_fcar.txt", quote = F, row.names= F, sep = "\t")
 ```
-
-
 ### Serovar specific GWAS
 
 - Run GWAS just looking at associations with either typhoid or paratyphoid fever
@@ -166,7 +168,7 @@ T_gwas<- filter(T_gwas, TEST == "ADD") #Keep just genetic testing
 manhattan(T_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkslategray3"))
 
 #Inspect top snps:
-T_tophits <- filter(T_gwas, P < 10e-5)
+T_tophits <- filter(T_gwas, P < 1e-5)
 T_tophits <- T_tophits[order(P),]
 head(T_tophits)
 #write file 
@@ -190,7 +192,7 @@ P_gwas<- filter(P_gwas, TEST == "ADD") #Keep just genetic testing
 manhattan(P_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkorchid"))
 
 #Inspect top snps:
-P_tophits <- filter(P_gwas, P < 10e-5)
+P_tophits <- filter(P_gwas, P < 1e-5)
 P_tophits <- P_tophits[order(P),]
 head(P_tophits)
 #Write file 
@@ -210,5 +212,5 @@ manhattan(P_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F,
 
 - Generally, the top significant hits in typhoid association do not associate with the top snps in the paratyphoid data
 - Typhoid data set looks most clear. 
-- Use Typhoid data for donwstream analysis
+- Use Typhoid data for donwstream analysis (redo fcyr and fcar assocs)
 - Paratyphoid study is underpowered but the two snps that do overlap, we could mention that these might represent a 'common' protective pathway as an extension
