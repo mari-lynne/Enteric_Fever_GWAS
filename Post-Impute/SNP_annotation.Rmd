@@ -6,13 +6,19 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE)
 knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
 ```
-
+##### Load Packages:
+```{r Packages, message=FALSE}
+library(data.table)
+library(tidylog)
+library(dplyr)
+library(stringr)
+```
 ### Annotate FcY SNPs
 24/03/22
-- Redo annotation with just the typhoid snps
+- Redo annotation with **just the typhoid** snps
 - Update to include general tophits as well as fcr snps at the same time
 
 ##### **Plan**
@@ -28,65 +34,24 @@ fcy_sig <- fread("T_fcy.txt")
 fcar_sig <- fread("T_fcar.txt")
 T_tophits <- fread("T_tophits.txt")
 
-library(dplyr)
-library(stringr)
-
 sigsnps <- rbind(fcar_sig, fcy_sig, T_tophits)#From assoc analysis
 
-nexus <- select(sigsnps, CHR, BP, REF, ALT)
+tophits <- fread("tophits.txt")
+nexus <- select(sigsnps, CHR, BP, REF, ALT) #957
 nexus <- mutate(nexus, strand = rep(1, 111))
 nexus <- mutate(nexus, Type = rep("Chromosome", 111))
-nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand) %>% mutate(BP_1 = BP+1)
-#collapse ref alt by /
-
-nexus <- nexus %>% mutate(refalt = str_c(REF, ALT, sep = "/"))
-vep <- select(nexus, CHR, BP, BP_1, refalt, strand)
-
-vep$BP_2 <- nexus$BP
-
-vep2 <- select(vep, CHR, BP, BP_2, refalt, strand)
-
-write.table(vep, "vep.txt", row.names = F, col.names = F, quote = F, sep = " ")
-write.table(vep2, "vep2.txt", row.names = F, col.names = F, quote = F, sep = " ")
-
-write.table(nexus, "T_sig_snps", row.names = F, col.names = F, quote = F)
-
+nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand)
+names(nexus) <- c("Type","Id","Position","Alelle1","Allele2","Strand")
+write.table(nexus, "annotation/nexus/nexus.txt", row.names = F, col.names = F, quote = F, sep = " ")
 #Then need to find what these snps are in LD with 
-
-#snp_nexus is down test using varient effect predictor 
-
-
 ```
-```{r}
-
-top_annotate <- fread("annotation/VEP/Top_hits.txt")
-
-```
-
-
-
-
 
 ### Format Annotation data
 
 - Upload SNP list to SNPNexus
 - Results in various annotation files
 - Download snp annotation results as .txt files and read into R 
-
-##### Updates 24/03/22
-SNP nexus down, and getting snps from mysql was on list of things to do anways
-
-Steps:
-- Install MariaDb (MySQL) client libraries on your computer
-- mysql --user=genome --host=genome-euro-mysql.soe.ucsc.edu -A -P 3306
-- Login to server then access database 
-
-```{sql connection=}
-
-```
-
-```{r Format Annotation data}
-
+```{r Load Data, message=FALSE}
 #Read in data
 temp = list.files(pattern="*.txt")
 myfiles = lapply(temp, fread)
@@ -95,52 +60,86 @@ trim <- str_extract(temp, ".{4,}?")
 names(myfiles) <- trim
 #Unlist files
 list2env((myfiles), envir = .GlobalEnv)
+```
 
+#### Format Data
+```{r Format Data, message = TRUE}
 #ID file ####
 ID <- gen_ #contains file of nearest gene to the snps
 rm(gen_)
-
-ID <- ID[,1:6]
+ID <- ID[,1:8]
 
 #Predicted ensembl function ####
 ense <- ense %>% dplyr::select(`Variation ID`, Variant, Symbol, `Predicted Function`) %>% distinct()
+#Lots of duplicate entries due to contigs I think
+no_introns <- ense %>% filter(`Predicted Function` != "intronic")
 
-ense2 <- ense %>% filter(`Predicted Function` != "intronic")
+introns <- ense %>% filter(str_detect(ense$`Predicted Function`, "intron"))
+no_introns <- ense %>% filter(!str_detect(ense$`Predicted Function`, "intron"))
 
-#collapse by ID
-ense2 <- ense %>%
-  group_by(`Variation ID`, Variant, Symbol) %>%
+#collapse by ense by ID
+functions <- ense %>%
+  group_by(`Variation ID`, Symbol) %>%
   summarise(`Predicted Function` = toString(`Predicted Function`))
+  
+main <- full_join(ID, functions, by = "Variation ID")
+#Matched 485 rows
 
 #Regulatory Elements ####
-
 #reg elements downloaded from roadmap project via snpnexus 
+road <- fread("~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/roadmap_Typhoid.txt")
 str(road)
 road$Epigenome <- as.factor(road$Epigenome)
 levels(road$Epigenome)
+#Contains many tissue eQTLs, #Filter for immune and lung tissue expression
+epi <- road %>% filter(str_detect(road$Epigenome, "B cell|CD4|CD8|T cell|Monocyte|Neutrophil|myeloid|Natural Killer|Spleen|macrophage|Small Intestine|sigmoid colon"))
+#Collapse by SNP
+epi <- epi %>%
+  group_by(`Variation ID`, Chromosome, `Feature Type Class`, `Feature Type`) %>%
+  summarise(Epigenome = toString(Epigenome))
+#cat Feature Type and Epigenome to one column
+epi <- epi %>% group_by(`Variation ID`, Chromosome, `Feature Type Class`) %>% mutate(Epigenome_Feature = paste(`Feature Type`, `Epigenome`, sep = ": ")) %>% select(-`Feature Type`, -Epigenome)
+main <- full_join(main, epi, by = "Variation ID")
 
-#Contains many tissue eQTLs, #Filter for blood 
-road2 <- road %>% filter(str_detect(road$Epigenome, "B cell|CD4|CD8|T cell|Monocyte|Neutrophil|myeloid|Natural Killer|Spleen"))
+#CADD ####
+cadd <- cadd %>% select(`Variation ID`,`Raw Score`,PHRED)
+main <- full_join(main, cadd, by = "Variation ID")
 
+#GWAS public data ####
+gwas <- gwas%>% select(-`Risk Allele`, -Region, -Platform)
+main <- full_join(main, gwas, by = "Variation ID")
+main <- distinct(main)
+
+#Glm association results ####
+assoc <- sigsnps %>% dplyr::select(CHR,BP,SNP,OR,`LOG(OR)_SE`,P)
+main <- main %>% dplyr::rename(CHR=Chromosome.x, BP=Position)
+main <- left_join(assoc, main, by = c("CHR","BP"))
+main <- main %>% select(-Chromosome.y,-Chromosome,-`Variation ID`)
+
+#Save table
+write.csv(main, file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/GWAS_summary.data.csv", row.names = F)
+
+#Just FCG receptors
+Fcs <- main %>% filter(str_detect(main$Symbol, "FC"))
+
+#collapse by rsID
+#Cat Feature Class
+epi <- epi %>%
+  group_by(`Variation ID`, Chromosome, `Feature Type Class`, `Feature Type`) %>%
+  summarise(Epigenome = toString(Epigenome))
+#cat Feature Type and Epigenome to one column
+Fcs <- Fcs %>% group_by(SNP) %>% mutate(Epigenome_Feature_Class = paste(`Feature Type Class`, `Epigenome_Feature`, sep = ": ")) %>% select(-`Feature Type Class`, -Epigenome_Feature)
+
+colnames <- str_remove(names(Fcs),"Epigenome_Feature_Class")
+rm(test)
+Fcs <-Fcs %>% group_by(across(c(-Epigenome_Feature_Class))) %>%
+  summarise(Epigenome_Feature_Class = toString(Epigenome_Feature_Class))
+write.csv(Fcs, file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/FcyRs_assoc_annotate.csv", row.names = F)
 ```
 
 ```{r gtEX, echo = FALSE}
 #query for whole blood
-
 ```
-
-```{r Joining tables}
-#Join all of the annotation tables by their snp rs - Variation ID
-#., allows you to pipe in previous table from left join
-annote <- left_join(ense2, ID, by = "Variation ID") %>%
-    left_join(.,cadd, by = "Variation ID") %>%
-  left_join(., funs, by = "Variation ID") %>%
-  select(-ends_with(".y")) %>% select(-ends_with(".x")) #clean names
-gwas_hits <- left_join(gwas, annote, by ="Variation ID")
-#chr1:161630802:A/G:1
-```
-### Results
-
 ##### FcGR Notes:
 - Top SNP associated with enteric fever, chr1:161630802:A/G:1, has come out as significant for GWAS, reduces IgG levels in Iceland study
 - In gtEX database it increases FcGR2B expression - which is an inhibitory receptor
