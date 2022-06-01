@@ -13,7 +13,7 @@ library(RColorBrewer)
 covar <- "~/GWAS_22/new_gwas/meta/final_metadata/all_covar.txt"
 
 #covar <- "~/GWAS_22/new_gwas/meta/covar.txt"
-prefix <- "VAST_PATCH" #Plink prefix of data
+prefix <- "T1T2" #Plink prefix of data
 
 setwd(paste("~/GWAS_22/new_gwas/",prefix,"/sex_check", sep=""))
 
@@ -48,8 +48,6 @@ sex$Sex <- ifelse(sex$Sex == "M", 1, ifelse(sex$Sex == "F", 2, NA))
 
 sex <- drop_na(sex, Sex)
 
-#write.table(sex, file = "~/GWAS_22/new_gwas/T1T2/sex_check/update_sex.txt", quote = F, row.names = F, col.names = T, sep = "\t")
-
 #Save update file
 write.table(sex, file = "update_sex.txt", quote = F, row.names = F, col.names = T, sep = "\t")
 
@@ -65,10 +63,10 @@ sum <- table(bim$V1) #weird xy category with 22415 snps
 sum
 
 #T1T2 P1Tyger
-#xy <- bim %>% filter(V1 == "23" | V1 == "24" | V1 == "25")
+xy <- bim %>% filter(V1 == "23" | V1 == "24" | V1 == "25")
 
 #VAST
-xy <- bim %>% filter(V1 == "X" | V1 == "XY" | V1 == "Y")
+#xy <- bim %>% filter(V1 == "X" | V1 == "XY" | V1 == "Y")
 
 #Remove duplicates 
 duplicated_snps <- xy[duplicated(paste(xy$V1,xy$V4)),]
@@ -93,11 +91,21 @@ sexcheck <- fread(paste(prefix,"_redo.sexcheck", sep=""))
 sexcheck$SNPSEX <- as.factor(sexcheck$SNPSEX)
 levels(sexcheck$SNPSEX) <- c("M","F")
 
-ggplot(sexcheck, aes(x=F, fill =SNPSEX)) + geom_histogram(bins=25, color="black") + labs(title = paste(prefix,"Sex Check"), x = " \nX-Chr Homozygosity (F-statistic)") +scale_fill_brewer(palette="Dark2")
+sexcheck$PEDSEX <- as.factor(sexcheck$PEDSEX)
+levels(sexcheck$PEDSEX) <- c("NA","M","F")
+
+a <- ggplot(sexcheck, aes(x=F, fill =SNPSEX)) + geom_histogram(bins=25, color="black") + labs(x = " \nX-Chr Homozygosity (F-statistic)") +scale_fill_brewer(palette="Dark2")
+
+#Colour by covar - ped sex
+b <- ggplot(sexcheck, aes(x=F, fill =PEDSEX)) + geom_histogram(bins=25, color="black") + labs(x = " \nX-Chr Homozygosity (F-statistic)") +scale_fill_manual(values = c("#7570b3","#1b9e77", "#d95f02"))
+
+title <-  paste(prefix,"Sex Check")
+(a + b) + plot_annotation(tag_levels = 'A', title = title)
+
+#900 #450
+
 #Males have only one copy of snp therefore homozygous
 #Females may have two copies of an X SNP therefore are heterozygous
-
-
 
 #Write fail list ####
 
