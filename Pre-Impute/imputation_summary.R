@@ -241,7 +241,7 @@ system("awk '{print $4, $3}' P1Tyger_38.bed > P1Tyger_38_rm.pos")
 #update plink file with SNPs that we could extract, and update the snp coordinates using update map function
 system("./plink --bfile P1Tyger_rm --extract P1Tyger_38_rm.snps --update-map P1Tyger_38_rm.pos --make-bed --out P1Tyger_remap")
 
-#Clean files ####
+#QC plink files ####
 
 #remove all files with rm
 #rm *rm*
