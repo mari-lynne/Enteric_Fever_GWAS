@@ -36,3 +36,8 @@ plink2 \
 #313 participants, 5 participants fail
 
 #0 8585 8648 46 1 14 97
+IID1 IID2 PI_HAT
+8585 8243 0.5248 #Cousins/sibling pair
+8648 8414 0.9999 #sample done twice?
+46 28 0.5065 #
+14 31 0.4884
