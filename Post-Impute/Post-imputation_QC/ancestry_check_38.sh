@@ -1,10 +1,9 @@
 #!/bin/bash
-set -uex
+#set -uex
 
 #Notes:
-#Previous attempts required converting back into GChr37 as that was the only reference genome I could find
-#Will redo ancestry check using GChr38 data found on PLINK2 site
-#Run Script as source ~/RSV/RSV_GWAS/Scripts/post-impute/ancestry_check_38.sh
+#Script to impute ancestry of study data based on 1000g data in GChr38 form
+#Run Script as source ~/GWAS_22/Post-Impute/Post-imputation_QC/ancestry_check_38.sh
 
 #Steps:
 ##Download ref data
@@ -12,19 +11,27 @@ set -uex
 #Clean both our ref and study data for AT/CG SNPs and duplicates/CHR mismatches
 #Check SNP annotation, either update ref to CHR:POS:BP or study data to rsIDs
 #Merge data sets (Plink1.9) 
-#PCA of data colour code by ancestry
+#PCA of data colour code by ancestry (in R)
 
 #Set up directories -------------------------------------------------------
 
-name=RSV_imp_QC #name of study PLINK files
+name=all_enteric_QC3 #name of study PLINK files
 refname=all_hg38
 
-refdir=/home/mari/RSV/data/post-imp/ancestry_38
+studydir=/home/mari/GWAS_22/new_gwas/QC
+
+#Set up folder for reference genome download
+mkdir -p $studydir/ref
+refdir=$studydir/ref
+
+#Set up log folder
 mkdir -p $refdir/plink_log
 log=$refdir/plink_log
 
-mkdir -p $refdir/qc_ancestry 
-qcdir=$refdir/qc_ancestry #qcdir will contain the cleaned study and refernce data
+#Set up folder for ancestry qc of study and reference data
+mkdir -p $studydir/ancestrty
+qcdir=$studydir/ancestrty
+#qcdir will contain the cleaned study and refernce data
 
 #Download refernce data -------------------------------------------------------
 
