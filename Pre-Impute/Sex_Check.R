@@ -116,7 +116,6 @@ ggplot(fail, aes(x=F, fill =SNPSEX)) + geom_histogram(color="black") + labs(titl
 
 
 #impute sex for missing phenotypes
-
 impute <-  filter(sexcheck, PEDSEX == "0")
 write.table(file = paste(prefix, "_impSex.txt", sep = ""),impute, sep = "\t", quote=F, row.names = F, col.names = F)
 
