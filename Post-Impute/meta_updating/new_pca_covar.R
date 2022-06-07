@@ -61,7 +61,53 @@ write.table(P_covar2, file = "~/GWAS_22/new_gwas/meta/final_metadata/P_covar_Jun
 
 #Pheno ####
 
-write.table(T_covar[,c(1,2,8)], file = "~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt", row.name = F, col.names = T, sep = "\t", quote = F)
+write.table(T_covar2[,c(1,2,8)], file = "~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt", row.name = F, col.names = T, sep = "\t", quote = F)
 write.table(P_covar2[,c(1,2,8)], file = "~/GWAS_22/new_gwas/meta/final_metadata/P_pheno_Jun.txt", row.name = F, col.names = T, sep = "\t", quote = F)
-
 save.image(file = "~/GWAS_22/new_gwas/meta/final_metadata/pheno_covars_Jun.RData")
+
+#1KG PCs ####
+
+load(file = "~/GWAS_22/new_gwas/meta/final_metadata/pheno_covars_Jun.RData")
+
+
+PCA <- read_delim("1KG.merged.eigenvec", 
+                  delim = "\t", escape_double = FALSE, 
+                  trim_ws = TRUE)
+##Rename columns
+colnames(PCA) <- c("FID","IID", "PC1","PC2","PC3","PC4","PC5","PC6","PC7","PC8","PC9","PC10")
+PCA <- PCA[!grepl("HG|NA", PCA$IID),] #subset rows
+
+#add pheno
+pheno <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_pheno_num.txt")
+PCA <- left_join(PCA,pheno, by = "IID")
+
+PCA_covar <- left_join(PCA,covar, by = "IID")
+missing <- anti_join(merge2,covar, by = "IID") #These were failures mostly nothing to find
+
+
+table(PCA_covar$Vaccine) #Ty21a recoded as 2 instead of 1 by mistake #corrected
+table(PCA_covar$Diagnosed)
+#remove missing pheno samples
+#PCA_covar$Diagnosed 
+PCA_covar$Diagnosed <- as.factor(PCA_covar$Diagnosed)
+PCA_covar <- filter(PCA_covar, Diagnosed != "NA")
+
+#Remove samples not in QC3
+PCA_covar <- filter(PCA_covar, `FID` != "NA")
+
+#remove extra PCs
+PCA_covar = PCA_covar[,-c(8:12)] 
+str(PCA_covar)
+
+#filter for just typhoid P = 3, T = 1, TN = 2
+T_covar2 <- filter(PCA_covar, Challenge != "3") #255 participants
+#filter for just paratyphoid P = 3, T = 1, TN = 2
+P_covar2 <- filter(PCA_covar, Challenge == "3") #71 participants
+
+#Save
+write.table(T_covar2, file = "~/GWAS_22/new_gwas/meta/final_metadata/T_covar_1kg.txt", row.name = F, col.names = T, sep = "\t", quote = F)
+
+write.table(P_covar2, file = "~/GWAS_22/new_gwas/meta/final_metadata/P_covar_1kg.txt", row.name = F, col.names = T, sep = "\t", quote = F)
+
+
+
