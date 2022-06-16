@@ -185,7 +185,6 @@ plink2 \
 rm -f $refname.forMerge 
 #Remerge -----------------------------------------------------------------------
 
-
 plink \
 --bfile $name.cleaned \
 --bmerge $refname.cleanMerge \
@@ -252,7 +251,7 @@ plink2 \
  plink2 \
  --bfile 1KG.merged.IBD\
  --pca \
- --out 1KG.merged.
+ --out 1KG.merged
 
 # Update fam file and extract pop data ---------------------------------------------------------------------------------------------------
 
