@@ -19,6 +19,7 @@ root <- args[1]
 PCA <- read_delim("1KG.merged.eigenvec", 
                           delim = "\t", escape_double = FALSE, 
                           trim_ws = TRUE)
+
 ##Rename columns
 colnames(PCA) <- c("FID","IID", "PC1","PC2","PC3","PC4","PC5","PC6","PC7","PC8","PC9","PC10")
 
