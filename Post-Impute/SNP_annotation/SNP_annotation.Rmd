@@ -1,16 +1,16 @@
 ---
 title: "SNP Annotation"
 author: "Mari Johnson"
-date: "23/03/2022"
+date: "13/06/2022"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
+#knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June')
 ```
 ##### Load Packages:
-```{r Packages, message=FALSE}
+```{r Packages, message=FALSE, warning=FALSE}
 library(data.table)
 library(tidylog)
 library(dplyr)
@@ -30,19 +30,19 @@ library(stringr)
 ### Write nexus snp list
 ```{r write nexus snp list}
 
-fcy_sig <- fread("T_fcy.txt")
-fcar_sig <- fread("T_fcar.txt")
-T_tophits <- fread("T_tophits.txt")
+fcy_sig <- fread("T_fcy.kg.txt")
+fcar_sig <- fread("T_fcar.1kg.txt")
+T_tophits <- fread("Ttophits.txt")
 
-sigsnps <- rbind(fcar_sig, fcy_sig, T_tophits)#From assoc analysis
+sigsnps <- rbind(fcar_sig, fcy_sig)#From assoc analysis
 
-tophits <- fread("tophits.txt")
+#tophits <- fread("tophits.txt")
 nexus <- select(sigsnps, CHR, BP, REF, ALT) #957
-nexus <- mutate(nexus, strand = rep(1, 111))
-nexus <- mutate(nexus, Type = rep("Chromosome", 111))
+nexus <- mutate(nexus, strand = rep(1, 14)) #rep = length of nexus
+nexus <- mutate(nexus, Type = rep("Chromosome", 14))
 nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand)
 names(nexus) <- c("Type","Id","Position","Alelle1","Allele2","Strand")
-write.table(nexus, "annotation/nexus/nexus.txt", row.names = F, col.names = F, quote = F, sep = " ")
+write.table(nexus, "annotation/Fc_nexus.txt", row.names = F, col.names = F, quote = F, sep = " ")
 #Then need to find what these snps are in LD with 
 ```
 
@@ -51,7 +51,14 @@ write.table(nexus, "annotation/nexus/nexus.txt", row.names = F, col.names = F, q
 - Upload SNP list to SNPNexus
 - Results in various annotation files
 - Download snp annotation results as .txt files and read into R 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = TRUE, message = FALSE)
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/annotation/T_nexus')
+```
+
 ```{r Load Data, message=FALSE}
+setwd("~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/annotation/T_nexus")
 #Read in data
 temp = list.files(pattern="*.txt")
 myfiles = lapply(temp, fread)
@@ -73,7 +80,6 @@ ID <- ID[,1:8]
 ense <- ense %>% dplyr::select(`Variation ID`, Variant, Symbol, `Predicted Function`) %>% distinct()
 #Lots of duplicate entries due to contigs I think
 no_introns <- ense %>% filter(`Predicted Function` != "intronic")
-
 introns <- ense %>% filter(str_detect(ense$`Predicted Function`, "intron"))
 no_introns <- ense %>% filter(!str_detect(ense$`Predicted Function`, "intron"))
 
@@ -87,18 +93,17 @@ main <- full_join(ID, functions, by = "Variation ID")
 
 #Regulatory Elements ####
 #reg elements downloaded from roadmap project via snpnexus 
-road <- fread("~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/roadmap_Typhoid.txt")
 str(road)
 road$Epigenome <- as.factor(road$Epigenome)
 levels(road$Epigenome)
-#Contains many tissue eQTLs, #Filter for immune and lung tissue expression
+#Contains many tissue eQTLs, #Filter for immune and gut tissue expression
 epi <- road %>% filter(str_detect(road$Epigenome, "B cell|CD4|CD8|T cell|Monocyte|Neutrophil|myeloid|Natural Killer|Spleen|macrophage|Small Intestine|sigmoid colon"))
 #Collapse by SNP
 epi <- epi %>%
-  group_by(`Variation ID`, Chromosome, `Feature Type Class`, `Feature Type`) %>%
+  group_by(`Variation ID`, `Chromosome`, `Feature Type Class`, `Feature Type`) %>%
   summarise(Epigenome = toString(Epigenome))
 #cat Feature Type and Epigenome to one column
-epi <- epi %>% group_by(`Variation ID`, Chromosome, `Feature Type Class`) %>% mutate(Epigenome_Feature = paste(`Feature Type`, `Epigenome`, sep = ": ")) %>% select(-`Feature Type`, -Epigenome)
+epi <- epi %>% group_by(`Variation ID`, Chromosome, `Feature Type Class`) %>% mutate(Epigenome_Feature = paste(`Feature Type`, `Feature Type Class`, `Epigenome`, sep = ": ")) %>% select(-Epigenome)
 main <- full_join(main, epi, by = "Variation ID")
 
 #CADD ####
@@ -110,16 +115,39 @@ gwas <- gwas%>% select(-`Risk Allele`, -Region, -Platform)
 main <- full_join(main, gwas, by = "Variation ID")
 main <- distinct(main)
 
+#clean cols
+#main <- select(main -)
+
 #Glm association results ####
+#get sigsnps, tophits table
+sigsnps <- fread("~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/Ttophits.txt")
+
 assoc <- sigsnps %>% dplyr::select(CHR,BP,SNP,OR,`LOG(OR)_SE`,P)
 main <- main %>% dplyr::rename(CHR=Chromosome.x, BP=Position)
 main <- left_join(assoc, main, by = c("CHR","BP"))
 main <- main %>% select(-Chromosome.y,-Chromosome,-`Variation ID`)
 
-#Save table
-write.csv(main, file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/GWAS_summary.data.csv", row.names = F)
+#reorder cols
 
-#Just FCG receptors
+#Save table
+write.csv(main, file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/annotation/T_GWAS_summary.data.csv", row.names = F)
+```
+
+```{r plot-gwscan-2, fig.height=3.75, fig.width=9}
+main$CHR <- as.factor(main$CHR)
+main <- mutate(main, MB = (BP/1000))
+p <- main %>% group_by(CHR) %>% ggplot(aes(x = MB, y = P, color = CHR)) +
+  geom_point(shape = 20) + theme(legend.position = "bottom")
+print(p)
+#need to invert the y axis, also change numbering to MB
+#blue dots are quite off
+
+```
+
+
+
+```{r FCR data, message=FALSE}
+#Just FCG receptors ####
 Fcs <- main %>% filter(str_detect(main$Symbol, "FC"))
 
 #collapse by rsID
@@ -134,7 +162,7 @@ colnames <- str_remove(names(Fcs),"Epigenome_Feature_Class")
 rm(test)
 Fcs <-Fcs %>% group_by(across(c(-Epigenome_Feature_Class))) %>%
   summarise(Epigenome_Feature_Class = toString(Epigenome_Feature_Class))
-write.csv(Fcs, file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/FcyRs_assoc_annotate.csv", row.names = F)
+#write.csv(Fcs, file = "~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/annotation/nexus/FcyRs_assoc_annotate.csv", row.names = F)
 ```
 
 ```{r gtEX, echo = FALSE}
