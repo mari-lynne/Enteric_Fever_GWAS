@@ -1,7 +1,7 @@
 ---
 title: "GWAS and Candidate Gene Associations with Enteric Fever"
 author: "Mari Johnson"
-date: "16/03/2022"
+date: "02/06/2022"
 output: html_document
 ---
 
@@ -13,15 +13,22 @@ Association testing is performed with plink and the results will be visualised u
 
 ### Aims
 
-1.  Run association tests of enteric fever challenge data across all enteric fever studies - typhoid and paratyphoid combined
+1.  Run association tests of enteric fever challenge data as serovar specific GWAS
   - Visualise GWAS results using a Manhattan Plot
 2. Associate the Fc receptor region SNPs with enteric fever
 3. Run association tests for paratyphoid and typhoid separately 
 
+###### Updates 02/06/22
+
+- re-run model with recoded covars, and PCs, also removed mis-sex samples and IBD
+- data saved as all_enteric_QC3
+- Run GWAS just looking at associations with either typhoid or paratyphoid fever
+- Version with 1KG overlayed PC's or PCs without 1KG (pros and cons to both)
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June')
 ```
 Load Packages
 ```{r load, eval=TRUE}
@@ -29,19 +36,24 @@ library(data.table)
 library(tidylog)
 library(dplyr)
 library(stringr)
+install.packages("qqman")
 library(qqman)
 ```
 ### GWAS
 
 - Run enteric fever GWAS with PCA as covariates
+- Two output files: 
+- enteric_assoc + T_pheno_Jun = PC's computed without 1KG data
+- T_assoc = 1KG PC's
 
 ```{bash GWAS Enteric fever}
-plink2 --bfile all_enteric_QC2 --pheno all_pheno_num.txt --pheno-name Diagnosed --covar pca_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --keep-if Re_Challenge = 1 --covar-variance-standardize --glm --out fcy--covar-variance-standardize --glm --out enteric_assoc
+plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 --pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt --pheno-name Diagnosed --covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_1kg.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_assoc
 ```
 
 ```{r Plot Assoc Results, eval = TRUE}
 
-gwas <- fread("enteric_assoc.Diagnosed.glm.logistic.hybrid")
+#gwas <- fread("enteric_assoc.Diagnosed.glm.logistic.hybrid")
+gwas <- fread("T_assoc.Diagnosed.glm.logistic.hybrid")
 
 #rename cols for qqman
 colnames(gwas) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
@@ -58,26 +70,33 @@ manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, c
 tophits <- filter(gwas, P < 10e-5)
 head(tophits)
 #Write top hits file 
-write.table(tophits, file = "tophits.txt",quote = F, row.names= F, sep = "\t")
+write.table(tophits, file = "Ttophits.txt",quote = F, row.names= F, sep = "\t")
+
+#QQ-plot
+qq(gwas$P)
 ```
+```{bash Genomic Inflation value}
+plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 --pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt --pheno-name Diagnosed --covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_1kg.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 --adjust --covar-variance-standardize -glm --out T_assoc
+#1.04296 genomic inflation, either add PC's or try again with the 1KG PC's 1.06 but qq looks straighter?
+#Try with imputed ethnicity/recorded maybe
+```
+
+
 ### FcyR Region
 
 - Run association test just for FcyR SNPs on chromosome 1
 ```{bash FcYR assoc}
-#Apply maf filter
-#maf requires snps to be in 10% of population
-plink2 --bfile all_enteric_QC --maf 0.1 --make-bed --out all_enteric_QC2
-#4,942,013 variants remaining after main filters
-
 #Make FcyR file
-plink2 --bfile all_enteric_QC2 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
+
+plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 --chr 1 --from-bp 161505430 --to-bp 161678022 -make-bed --out fcyr
 
 #Run Assoc
-plink2 --bfile fcyr --pheno T_pheno.txt --pheno-name Diagnosed --covar T_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_fcy
+plink2 --bfile fcyr --pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt --pheno-name Diagnosed --covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_1kg.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_fcy.kg
+
 ```
 
 ```{r Plot Fcy Results, eval = TRUE}
-gwasResults <- fread("T_fcy.Diagnosed.glm.logistic.hybrid") #previous enteric version is just fcy
+gwasResults <- fread("T_fcy.kg.Diagnosed.glm.logistic.hybrid") #previous enteric version is just fcy
 
 colnames(gwasResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        "LOG(OR)_SE","Z_STAT","P","ERRCODE")
 
@@ -91,7 +110,7 @@ snpsOfInterest <- as.vector(gwasResults$SNP)
 fcy_sig <- filter(gwasResults, P <= 0.05)
 
 #write file 
-write.table(fcy_sig, file = "T_fcy.txt", quote = F, row.names= F, sep = "\t")
+write.table(fcy_sig, file = "T_fcy.kg.txt", quote = F, row.names= F, sep = "\t")
 
 ```
 
@@ -100,12 +119,17 @@ write.table(fcy_sig, file = "T_fcy.txt", quote = F, row.names= F, sep = "\t")
 - FcaR is on chromosome 19, run extra association analysis
 
 ```{bash FcaR assoc}
+
+
 # +/- 10kb from gene co-oridnates chr19 54874231 --to-bp 54901420
-plink2 --bfile fcar --pheno T_pheno.txt --pheno-name Diagnosed --covar T_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_fcar
+plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 --chr 19 --from-bp 54874231 --to-bp 54901420 -make-bed --out fcar
+
+#Run Assoc
+plink2 --bfile fcar --pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt --pheno-name Diagnosed --covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_1kg.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out T_fcar.1kg
 ```
 
 ```{r Plot Fcar Results, eval=TRUE}
-fcarResults <- fread("T_fcar.Diagnosed.glm.logistic.hybrid")
+fcarResults <- fread("T_fcar.1kg.Diagnosed.glm.logistic.hybrid")
 
 colnames(fcarResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
                            "LOG(OR)_SE","Z_STAT","P","ERRCODE")
@@ -117,63 +141,9 @@ fcar_sig <- filter(fcarResults, P <= 0.05)
 head(fcar_sig)
 
 #write file 
-write.table(fcar_sig, file = "T_fcar.txt", quote = F, row.names= F, sep = "\t")
+write.table(fcar_sig, file = "T_fcar.1kg.txt", quote = F, row.names= F, sep = "\t")
 ```
-### Serovar specific GWAS
 
-- Run GWAS just looking at associations with either typhoid or paratyphoid fever
-- keep-if option in plink seems to be limited to one condition therefore make just typhoid and just paratyphoid covar files = Challenge = T, filter rechallenge != TT
-
-```{r Make Covar Files}
-
-#Key: ##
-#Strain: C, P = 3, T = 1, TN = 2
-#Sex M=1, F=2
-#Re-challenge N=1, PP=2, PT=3, TP=4, TT=5
-#Vaccine: NONE = 0, Ty21a = 1, M01ZH09= 2, Vi-PS = 3, Vi-TT= 4
-
-covar <- fread("pca_covar.txt")
-pheno <- fread("all_pheno_num.txt")
-
-typoid <- filter(covar, Challenge == 1|2, Re_Challenge != 5) #348
-para <- filter(covar, Challenge == 3, Re_Challenge != 2) #68
-
-T_pheno <- left_join(typoid, pheno)
-T_nas <- T_pheno %>% filter(is.na(Diagnosed))
-P_pheno <- left_join(para, pheno)
-
-#make new files 
-
-write.table(T_pheno, file = "T_covar.txt", quote = F, row.names= F, sep = "\t")
-write.table(P_pheno, file = "P_covar.txt", quote = F, row.names= F, sep = "\t")
-
-T_pheno[,c(1,2,29)] %>% write.table(file = "T_pheno.txt", quote = F, row.names= F, sep = "\t")
-P_pheno[,c(1,2,29)] %>% write.table(file = "P_pheno.txt", quote = F, row.names= F, sep = "\t")
-```
-```{bash Just Typhoid Assoc}
-
-plink2 --bfile all_enteric_QC2 --pheno T_pheno.txt --pheno-name Diagnosed --covar T_covar.txt --covar-name Sex, Challenge, Dose, Vaccine, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out typhoid
-```
-```{r Plot Typhoid Results}
-
-T_gwas <- fread("typhoid.Diagnosed.glm.logistic.hybrid")
-
-colnames(T_gwas) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
-                           "LOG(OR)_SE","Z_STAT","P","ERRCODE")
-
-T_gwas$TEST <- as.factor(T_gwas$TEST)
-T_gwas<- filter(T_gwas, TEST == "ADD") #Keep just genetic testing
-
-#Plot Manhattan
-manhattan(T_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkslategray3"))
-
-#Inspect top snps:
-T_tophits <- filter(T_gwas, P < 1e-5)
-T_tophits <- T_tophits[order(P),]
-head(T_tophits)
-#write file 
-write.table(T_tophits, file = "T_tophits.txt",quote = F, row.names= F, sep = "\t")
-```
 
 ```{bash Just Paratyphoid Assoc}
 plink2 --bfile all_enteric_QC2 --pheno P_pheno.txt --pheno-name Diagnosed --covar P_covar.txt --covar-name Sex, Dose, Age, Re_Challenge, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out paratyphoid
@@ -203,11 +173,63 @@ write.table(P_tophits, file = "P_tophits.txt",quote = F, row.names= F, sep = "\t
 
 #Overlay sig typhoid snps on paratyphoid graph
 #Get list 
-sigsnps <- T_tophits$SNP
+sigsnps <- P_tophits$SNP
 #Plot Manhattan
 manhattan(P_gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("darkgrey", "darkorchid"), highlight = sigsnps)
 
 ```
+### FcyR Region - Para
+
+- Run association test just for FcyR SNPs on chromosome 1
+```{bash FcYR assoc}
+
+#Run Assoc
+plink2 --bfile fcyr --pheno ~/GWAS_22/new_gwas/meta/final_metadata/P_pheno_Jun.txt --pheno-name Diagnosed --covar ~/GWAS_22/new_gwas/meta/final_metadata/P_covar_1kg.txt --covar-name Sex, Dose, Age, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out P_fcy.kg
+
+```
+
+```{r Plot Fcy Results, eval = TRUE}
+P_results <- fread("P_fcy.kg.Diagnosed.glm.logistic.hybrid") #previous enteric version is just fcy
+
+colnames(P_results) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        "LOG(OR)_SE","Z_STAT","P","ERRCODE")
+
+P_results$TEST <- as.factor(P_results$TEST)
+P_results <- filter(P_results, TEST == "ADD")
+
+#make character vector for Fcy
+snpsOfInterest <- as.vector(P_results$SNP)
+
+#Sig SNPs
+P_fcy_sig <- filter(P_results, P <= 0.05)
+
+#write file 
+write.table(P_fcy_sig, file = "P_fcy.kg.txt", quote = F, row.names= F, sep = "\t")
+```
+```{bash FcaR assoc}
+
+#Run Assoc
+plink2 --bfile fcar --pheno ~/GWAS_22/new_gwas/meta/final_metadata/P_pheno_Jun.txt --pheno-name Diagnosed --covar ~/GWAS_22/new_gwas/meta/final_metadata/P_covar_1kg.txt --covar-name Sex, Dose, Age, PC1, PC2, PC3, PC4, PC5 --covar-variance-standardize --glm --out P_fcar.1kg
+
+#33 cases #38 controls
+```
+
+```{r Plot Fcar Results, eval=TRUE}
+P_fcarResults <- fread("P_fcar.1kg.Diagnosed.glm.logistic.hybrid")
+
+colnames(P_fcarResults) <- c("CHR", "BP", "SNP", "REF", "ALT", "A1","FIRTH?","TEST","OBS_CT","OR",        
+                           "LOG(OR)_SE","Z_STAT","P","ERRCODE")
+
+P_fcarResults$TEST <- as.factor(P_fcarResults$TEST)
+P_fcarResults <- filter(P_fcarResults, TEST == "ADD")
+
+P_fcar_sig <- filter(P_fcarResults, P <= 0.05)
+head(P_fcar_sig)
+
+#write file 
+write.table(P_fcar_sig, file = "P_fcar.1kg.txt", quote = F, row.names= F, sep = "\t")
+```
+
+
 ##### Conclusions
 
 - Generally, the top significant hits in typhoid association do not associate with the top snps in the paratyphoid data
