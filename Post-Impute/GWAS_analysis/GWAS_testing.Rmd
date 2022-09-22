@@ -62,9 +62,152 @@ plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 \
 --out T_assoc
 ```
 
+As I now have a much smaller sample size, I receive this warning: Warning: \--glm remaining control count is less than 10x predictor count for phenotype 'Diagnosed' as I have 10 covariates which will be less than 1/10th of our n 153.
+
+I am already thinking there is probably issues with linear dependencies based on the covar, i.e with dose (poss concat this with challenge). To many covars and too small an n can overfit model. Therefore test for significance of these factors in linear model. Remove least significant covars.
+
+-   covar standardise necessary, but does pass VIF test (=2)
+
+```{bash GWAS Covar checking}
+plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 \
+--pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_Jun.txt \
+--covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 \
+--glm genotypic interaction \
+--covar-variance-standardize \
+--out check
+```
+
+#### Interaction testing
+
+```{r Interaction test}
+
+interact <- fread("check.Diagnosed.glm.logistic.hybrid")
+
+colnames(interact) <-
+  c("CHR","BP", "SNP","REF","ALT","A1",
+    "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE",
+    "Z_STAT", "P","ERRCODE")
+
+interact$TEST <- as.factor(interact$TEST)
+
+levels(interact$TEST)
+
+#Should I filter for top SNPS? Then look at interaction factor sig
+
+interact <- interact %>% 
+  select(!c(ALT, OBS_CT,`FIRTH?`,ERRCODE)) #slims data so it's quicker tbh
+
+# Just vaccine 
+
+vax <- interact[(interact$TEST == "Vaccine"),]
+
+
+vax %>% group_by(ID) %>%
+  ggplot(aes(
+    x = TEST,
+    y = -log10(P),
+    fill = TEST
+  )) + geom_boxplot() +
+  theme_bw() + labs(x = "\nCovariate", title = "Interaction Tests") + theme(legend.position = "none")
+
+
+# ADD
+
+ADD <- interact[(str_detect(interact$TEST,"ADD")),]
+geno <- ADD %>% filter(TEST == "ADD")
+geno <- filter(geno, P <10e-3) #topsnps = <10e-4
+snps <- geno$SNP
+top <- filter(ADD, SNP %in% snps)
+
+# glm is fitting a model per snp, therefore get an overview of covars
+
+tiff(file = "interaction_moresnps.tiff",
+     res = 720,
+     width = 7500, height = 5000,
+     compression = "lzw")
+top %>% group_by(SNP) %>%
+  ggplot(aes(
+    x = TEST,
+    y = -log10(P),
+    fill = TEST
+  )) + geom_boxplot() +
+  theme_bw() + labs(x = "\nCovariate", title = "Interaction Tests") + theme(legend.position = "none")
+dev.off()
+
+# Remove dose and sex maybe
+# Dom model check
+
+DOM <- interact[(str_detect(interact$TEST,"DOM")),]
+geno <- DOM %>% filter(TEST == "DOMDEV")
+geno <- filter(geno, P <10e-4) #topsnps = <10e-4
+snps <- geno$SNP
+top <- filter(DOM, SNP %in% snps)
+
+tiff(file = "interaction_topdom.tiff",
+     res = 720,
+     width = 8000, height = 5000,
+     compression = "lzw")
+top %>% group_by(SNP) %>%
+  ggplot(aes(x = TEST, y = -log10(P), fill = TEST)) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(x = "\nCovariate", title = "Interaction Tests") +
+  theme(legend.position = "none")
+dev.off()
+```
+
+#### Updated associations
+
+
+```{bash update assoc}
+plink2 --bfile ~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/enteric_maf \
+--pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_Jun.txt \
+--covar-name Age, Challenge, Vaccine, PC1, PC2, PC3, PC4, PC5 \
+--glm \
+--adjust \
+--out test1
+
+# Can now perform logistic firth, no warning message :) gif = 1.035
+# Could be vaccinated participants tbh causing separation as vaccine predicts outcome well enough on it's own, or LD or not enough pop strat - pcs no effect after 5
+# Weight vaccine covar more?
+# Dont need to standardise, check logistic reg options
+
+```
+```{bash fcyr assoc sep}
+plink2 --bfile fcyr \
+--pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_Jun.txt \
+--covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--out T_sep
+```
+Notes:
+Add in PC6? More stringent MAF? More stringent imputation filter
+
+```{bash MAF}
+plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 \
+--maf 0.1 \
+--make-bed \
+--out enteric_maf
+
+
+```
+
+
+
+### Plot results
+
 ```{r Plot Assoc Results, eval = TRUE}
 
-gwas <- fread("T_assoc.Diagnosed.glm.logistic.hybrid")
+#gwas <- fread("T_assoc.Diagnosed.glm.logistic.hybrid")
+
+gwas <- fread("test1.Diagnosed.glm.logistic.hybrid")
 
 # Rename cols for qqman
 colnames(gwas) <-
@@ -77,9 +220,18 @@ gwas <-
   filter(gwas, TEST == "ADD") %>% 
   select(!c(`FIRTH?`,ERRCODE)) 
 
+# Inspect top snps:
+tophits <- filter(gwas, P < 10e-5)
+
+# Write gwas and top hits file
+write.table(gwas, file = "STY_gwas3.txt",quote = F, row.names= F, sep = "\t")
+write.table(tophits, file = "STY_tophits3.txt",quote = F, row.names= F, sep = "\t")
 
 # Plot Manhattan
-pdf(file = "typhoid_manhattan.pdf", paper = "a4r")
+tiff(file = "typhoid_man3.tiff",
+     res = 720,
+     width = 8000, height = 5000,
+     compression = "lzw")
 manhattan(
   gwas,
   ylim = c(0, 8),
@@ -89,16 +241,21 @@ manhattan(
   col = c("darkgrey", "skyblue"),
   main = "GWAS of typhoid fever susceptibility"
 )
+dev.off()
 
-# Inspect top snps:
-tophits <- filter(gwas, P < 10e-5)
-
-# Write gwas and top hits file
-write.table(gwas, file = "STY_gwas.txt",quote = F, row.names= F, sep = "\t")
-write.table(tophits, file = "STY_tophits.txt",quote = F, row.names= F, sep = "\t")
 
 # QQ-plot
-# qq(gwas$P)
+
+tiff(file = "qq3.tiff",
+     res = 720,
+     width = 5000, height = 5000,
+     compression = "lzw")
+qq(gwas$P)
+dev.off()
+
+fuma <- filter(gwas, P < 1e-5)
+
+
 ```
 
 **Genomic Inflation**
