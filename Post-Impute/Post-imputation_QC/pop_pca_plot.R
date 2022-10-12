@@ -1,16 +1,22 @@
 # Date: 2022/06/02
 # Purpose: Plot user data projected on 1KG PCs, greying out 1KG individuals
 
-# Set up -----------------------------------------------------------------------
+# Load data --------------------------------------------------------------------
 
 setwd("/home/mari/GWAS_22/new_gwas/QC/ancestry")
 
-##Load packages
+# Load packages
+
+library(dplyr)
+library(tidylog)
+library(patchwork)
 library(ggplot2)
 library(colorspace)
 library(readr)
 library(data.table)
-library(dplyr)
+library(forcats)
+library(viridis)
+
 
 # Initialise command line arguments
 args <- commandArgs(TRUE)
@@ -39,10 +45,23 @@ pop <- read_delim(
 
 merge <- full_join(PCA, pop, by = "IID")
 
+# Plot ancestry set up ---------------------------------------------------------
 
-# Colour NAs as grey = our study data
-# Overlay that with the pop data
-# Define colour palette
+# Define colour palette for populations
+# Super pop
+
+KG_Palette_Super <-
+  heat_hcl(
+    length(unique(merge$SuperPop)),
+    h = c(300, 75),
+    c. = c(35, 95),
+    l = c(15, 90),
+    power = c(0.8, 1.2),
+    fixup = TRUE,
+    gamma = NULL,
+    alpha = 0.85
+  )
+
 KG_Palette <-
   heat_hcl(
     length(unique(merge$Population)),
@@ -55,54 +74,89 @@ KG_Palette <-
     alpha = 0.8
   )
 
-#Large pop
-KG_Palette2 <-
-  heat_hcl(
-    length(unique(merge$SuperPop)),
-    h = c(300, 75),
-    c. = c(35, 95),
-    l = c(15, 90),
-    power = c(0.8, 1.2),
-    fixup = TRUE,
-    gamma = NULL,
-    alpha = 0.8
-  )
+# Rename NAs in Pop data as Study
+merge$SuperPop <-
+  merge$SuperPop %>%
+  replace_na("Study") 
 
-#Arrange so NAs are at the bottom of DF
-#Rename NAs
+merge$Population <-
+  merge$Population %>%
+  replace_na("Study")
 
-merge$SuperPop <- merge$SuperPop %>% replace_na("Study")
-merge$SuperPop <- as.factor(merge$SuperPop)
+# Recode to factors
+merge$SuperPop <-
+  as.factor(merge$SuperPop)
 levels(merge$SuperPop)
 
-merge$Population <- merge$Population %>% replace_na("ZStudy")
-merge$Population <- as.factor(merge$Population)
+merge$Population <-
+  as.factor(merge$Population)
 levels(merge$Population)
 
-merge <- merge[order(merge$SuperPop), ]
+# Order labels for plotting
+merge$SuperPop <- fct_relevel(merge$SuperPop, "Study", after = Inf)
+merge$Population <- fct_relevel(merge$Population, "Study", after = Inf)
 
-pdf("KG.pop_strat_PCA.pdf")
-ggplot(merge, aes(PC1, PC2, colour = SuperPop)) + geom_point() + scale_colour_manual(values = KG_Palette2) +
+merge <- merge[order(merge$SuperPop), ]
+merge <- merge[order(merge$Population), ]
+
+# Population  PCA Plots --------------------------------------------------------
+
+x <- 
+  ggplot(merge,
+       aes(PC1, PC2, colour = SuperPop)) +
+  geom_point() +
+  scale_colour_manual(values = (KG_Palette_Super)) +
   theme_bw()
+
 dev.off()
 
+# Sub population PCA
 
 pdf("KG.subpop_strat_PCA.pdf")
-ggplot(merge, aes(PC1, PC2, colour = Population)) + geom_point() + scale_colour_manual(values = KG_Palette) +
+
+y <- 
+  ggplot(merge,
+       aes(PC1, PC2, colour = Population)) +
+  geom_point() +
+  scale_colour_manual(values = KG_Palette) +
   theme_bw()
+
 dev.off()
 
-a=ggplot(merge,aes(PC1,PC2, colour=SuperPop)) +geom_point() + scale_colour_manual(values = KG_Palette2)
-b=ggplot(merge,aes(PC2,PC3, colour=SuperPop)) +geom_point() + scale_colour_manual(values = KG_Palette2)
-c=ggplot(merge,aes(PC3,PC4, colour=SuperPop)) +geom_point() + scale_colour_manual(values = KG_Palette2)
-d=ggplot(merge,aes(PC4,PC5, colour=SuperPop)) +geom_point() + scale_colour_manual(values = KG_Palette2)
+pdf("KG_ancestry_PCAs.pdf")
+(x/c) + 
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "a", title = "1KG ancestry PCA") 
+dev.off()
+
+ggsave("KG-ancestry-PCAs.png")
 
 
-relabel <- c("ACB","ASW","BEB","CDX","CEU","CHB","CHS","CLM","ESN","FIN","GBR","GIH","GWD","IBS","ITU","JPT","KHV","LWK","MSL","MXL","PEL","PJL","PUR","STU","TSI","YRI","Study")
+# Extra PCs
 
-e=ggplot(merge,aes(PC1,PC2, colour=Population)) +geom_point() + scale_colour_manual(values = KG_Palette,labels = relabel)+theme(legend.key.size = unit(0.5, "cm"), legend.position = "none")
+b <-
+  ggplot(merge, aes(PC2, PC3, colour = SuperPop)) +
+  geom_point() +
+  scale_colour_manual(values = KG_Palette_Super)
+c <- 
+  ggplot(merge, aes(PC3, PC4, colour = SuperPop)) +
+  geom_point() + scale_colour_manual(values = KG_Palette_Super) +
+  theme_bw() + theme(legend.position = "none")
 
-f=ggplot(merge,aes(PC4,PC5, colour=Population)) +geom_point() + scale_colour_manual(values = KG_Palette, labels = relabel) +theme(legend.key.size = unit(0.5, "cm"), legend.position = "right")
+
+d <- 
+  ggplot(merge, aes(PC4, PC5, colour = SuperPop)) +
+  geom_point() + scale_colour_manual(values = KG_Palette_Super) + theme_bw()
+
+e <- 
+  ggplot(merge, aes(PC9, PC10, colour = SuperPop)) +
+  geom_point() + scale_colour_manual(values = KG_Palette_Super)
+
+e
+
+ggplot(merge, aes(PC8, PC10, colour = Population)) +
+  geom_point() + scale_colour_manual(values = KG_Palette)
+
 
 # Add pc variance --------------------------------------------------------------
 
@@ -110,7 +164,7 @@ eigenval <- fread("1KG.merged.eigenval")
 pve <- data.frame(PC = 1:10, pve = (eigenval/sum(eigenval)*100))
 pve$PC <- as.factor(pve$PC)
 
-# Plot PVE ----------------------------------------------------------------------
+# Plot PVE ---------------------------------------------------------------------
 PC_Palette <-
   heat_hcl(
     10,
@@ -160,39 +214,57 @@ dev.off()
 
 save.image(file = "enteric_pop_pca.RData")
 
-#PCA no IKG --------------------------------------------------------------------
+# PCA no IKG --------------------------------------------------------------------
 
-pca2 <- fread("all_enteric_QC3.cleaned.eigenvec")
-eigenval2 <- fread("all_enteric_QC3.cleaned.eigenval")
+# Load data
+pca <- fread("all_enteric_QC3.cleaned.eigenvec")
+eigenval <- fread("all_enteric_QC3.cleaned.eigenval")
 
-ggplot(data = pca2, aes(PC1, PC2)) + geom_point()
-ggplot(data = pca2, aes(PC2, PC3)) + geom_point()
+# Basic PCA
+ggplot(data = pca, aes(PC1, PC2)) + geom_point()
+ggplot(data = pca, aes(PC2, PC3)) + geom_point()
 
-pve2 <- data.frame(PC = 1:10, pve = (eigenval2 / sum(eigenval2) * 100))
-pve2$PC <- as.factor(pve2$PC)
+# PVE
+pve <- data.frame(PC = 1:10, pve = (eigenval2 / sum(eigenval2) * 100))
+pve$PC <- as.factor(pve2$PC)
 
-ggplot(pve2, aes(PC, V1, colour = PC)) +
+
+# Set up colour palette
+PC_Palette <-
+  heat_hcl(
+    10,
+    h = c(30, -160),
+    c = c(80, NA, 45),
+    l = c(38, 79),
+    power = c(0.85, 1.0),
+    fixup = TRUE,
+    gamma = NULL,
+    alpha = 1
+  )
+
+
+# Plot proportion of variance
+ggplot(pve, aes(PC, V1, colour = PC)) +
   geom_line(group = "PC", colour = "#454b51") +
   geom_point(size = 2.1)  +
   ylab("\nProportion of Variance (%)\n") +
   scale_colour_manual(values = PC_Palette) +
   theme(legend.position = "none")
+# Use these PCs in GLM model
 
-# Use these PCs in glm model
-
-# Colour pca by outcome  -------------------------------------------------------
+# Colour PCA by outcome  -------------------------------------------------------
 
 pheno <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_pheno_num.txt")
+covar <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_covar_num.txt")
 
-merge2 <- full_join(pca, pheno, by = "IID")
-merge2$Diagnosed <- as.factor(merge2$Diagnosed)
-ggplot(data = merge2, aes(PC1, PC2, colour = Diagnosed)) + geom_point()
-ggplot(data = merge2, aes(PC2, PC3, colour = Diagnosed)) + geom_point()
+merge <- full_join(pca, pheno, by = "IID") # matched 329 rows
+merge$Diagnosed <- as.factor(merge$Diagnosed)
+covar <- left_join(merge, covar, by = "IID")
 
-merge3 <- full_join(PCA, pheno, by = "IID")
-merge3$Diagnosed <- as.factor(merge3$Diagnosed)
 
-merge3 %>%
+# Replot PCAS
+
+merge %>%
   filter(Diagnosed != "NA") %>%
   ggplot(aes(PC1, PC2, colour = Diagnosed)) +
   geom_point(alpha = 0.9) +
@@ -200,47 +272,53 @@ merge3 %>%
                       labels = c("nTD", "TD")
                       )
 
-merge3 %>%
-  filter(Diagnosed != "NA") %>%
-  ggplot(aes(PC4, PC5, colour = Diagnosed)) +
-  geom_point(alpha = 0.9) +
-  scale_colour_manual(values = c("seagreen3", "sandybrown"),
-                      labels = c("nTD", "TD")
-                      )
-
-x = merge2 %>%
-  filter(Diagnosed != "NA") %>%
-  ggplot(aes(PC1, PC2, colour = Diagnosed)) +
-  geom_point(alpha = 0.9) +
-  scale_colour_manual(values = c("seagreen3", "sandybrown"),
-                      labels = c("nTD", "TD")
-                      )
-
-y = merge2 %>%
-  filter(Diagnosed != "NA") %>%
-  ggplot(aes(PC2, PC3, colour = Diagnosed)) +
-  geom_point(alpha = 0.9) + 
-  scale_colour_manual(values = c("seagreen3", "sandybrown"),
-                                                labels = c("nTD", "TD")
-                                                )
-
-
-z = merge2 %>%
+merge %>%
   filter(Diagnosed != "NA") %>%
   ggplot(aes(PC3, PC4, colour = Diagnosed)) +
-  geom_point(alpha = 0.9) + 
+  geom_point(alpha = 0.9) +
   scale_colour_manual(values = c("seagreen3", "sandybrown"),
                       labels = c("nTD", "TD")
-  )
-  
-za = merge2 %>%
-  filter(Diagnosed != "NA") %>%
-  ggplot(aes(PC4, PC5, colour = Diagnosed)) +
-  geom_point(alpha = 0.9) + 
-  scale_colour_manual(values = c("seagreen3", "sandybrown"),
-                      labels = c("nTD", "TD")
-  )
+                      )
+
+# Covar PCAs -------------------------------------------------------------------
+covar$Sex <- as.factor(covar$Sex)
+# M= 1, F = 2
+
+a <-
+  covar %>%
+  filter(Sex != "NA") %>%
+  ggplot(aes(PC1, PC2, colour = Sex)) +
+  geom_point(alpha = 0.95, size = 2) +
+  scale_colour_manual(values = c("#a65ca6", "#fcd325"),
+                      labels = c("Male", "Female")) +
+  theme_bw()
+
+b <- 
+  covar %>%
+  filter(Sex != "NA") %>%
+  ggplot(aes(PC3, PC4, colour = Sex)) +
+  geom_point(alpha = 0.95, size = 2) +
+  scale_colour_manual(values = c("#a65ca6", "#fcd325"),
+                      labels = c("Male", "Female")) +
+  theme_bw()
+
                                                                                          
-(x|y)/(z|za) + 
+(a|b) + 
   plot_layout(guides = "collect") +
-  plot_annotation(tag_levels = "a", title = "PCA by Diagnosis")                                         
+  plot_annotation(tag_levels = "a", title = "PCA of imputed gwas data") 
+
+c <- ggplot(pve, aes(PC, V1, colour = PC)) +
+  geom_line(group = "PC", colour = "#454b51") +
+  geom_point(size = 2.1)  +
+  ylab("\nProportion of Variance (%)\n") +
+  scale_colour_manual(values = PC_Palette) +
+  ylim(0,20) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+c
+
+
+# PCs proportion of variance only goes down to 9%?
+# Either need to include more PCs - double check sib removal
+# Include PCs 1-10 to account for structure
