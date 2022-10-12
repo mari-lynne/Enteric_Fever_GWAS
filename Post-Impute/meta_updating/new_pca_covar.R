@@ -9,6 +9,8 @@ pve$PC <- as.factor(pve$PC)
 
 
 #PCA no IKG ####
+
+setwd("/home/mari/GWAS_22/new_gwas/QC/ancestry")
 pca2 <- fread("all_enteric_QC3.cleaned.eigenvec")
 eigenval2 <- fread("all_enteric_QC3.cleaned.eigenval")
 
@@ -18,6 +20,8 @@ merge2 <- full_join(pca2, pheno, by = "IID") #matched 329
 merge2$Diagnosed<- as.factor(merge2$Diagnosed)
 ggplot(data=merge2,aes(PC1, PC2, colour = Diagnosed)) + geom_point()
 ggplot(data=merge2,aes(PC2, PC3, colour = Diagnosed)) + geom_point()
+ggplot(data=merge2,aes(PC3, PC4, colour = Diagnosed)) + geom_point()
+ggplot(data=merge2,aes(PC5, PC6, colour = Diagnosed)) + geom_point()
 
 #merge3 <- full_join(PCA, pheno, by = "IID")) #337
 
