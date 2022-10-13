@@ -222,11 +222,19 @@ eigenval <- fread("all_enteric_QC3.cleaned.eigenval")
 
 # Basic PCA
 ggplot(data = pca, aes(PC1, PC2)) + geom_point()
-ggplot(data = pca, aes(PC2, PC3)) + geom_point()
 
 # PVE
-pve <- data.frame(PC = 1:10, pve = (eigenval2 / sum(eigenval2) * 100))
-pve$PC <- as.factor(pve2$PC)
+pve <- data.frame(PC = 1:10, pve = (eigenval/ sum(eigenval) * 100))
+pve$PC <- as.factor(pve$PC)
+cumsum(pve$V1)
+
+
+library(ggfortify)
+pca_residues = prcomp(msd[, -c(1:3,18)], scale. = TRUE) # calcs pca
+plot(pca_residues$sdev^2/sum(pca_residues$sdev^2), type = "b") # scree plot
+autoplot(pca_residues, data = msd, colour = "Timepoint", shape="Vaccine", frame = TRUE, frame.type = 'norm')
+
+
 
 
 # Set up colour palette
@@ -253,18 +261,18 @@ ggplot(pve, aes(PC, V1, colour = PC)) +
 # Use these PCs in GLM model
 
 # Colour PCA by outcome  -------------------------------------------------------
-
+pca <- fread("all_enteric_QC3.cleaned.eigenvec")
+eigenval <- fread("all_enteric_QC3.cleaned.eigenval")
 pheno <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_pheno_num.txt")
 covar <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_covar_num.txt")
 
-merge <- full_join(pca, pheno, by = "IID") # matched 329 rows
-merge$Diagnosed <- as.factor(merge$Diagnosed)
-covar <- left_join(merge, covar, by = "IID")
+pca_covar <- full_join(pca, pheno, by = "IID") # matched 329 rows
+pca_covar$Diagnosed <- as.factor(pca_covar$Diagnosed)
+covar <- left_join(pca_covar, covar, by = "IID")
 
 
 # Replot PCAS
-
-merge %>%
+pca_covar %>%
   filter(Diagnosed != "NA") %>%
   ggplot(aes(PC1, PC2, colour = Diagnosed)) +
   geom_point(alpha = 0.9) +
@@ -272,7 +280,7 @@ merge %>%
                       labels = c("nTD", "TD")
                       )
 
-merge %>%
+pca_covar %>%
   filter(Diagnosed != "NA") %>%
   ggplot(aes(PC3, PC4, colour = Diagnosed)) +
   geom_point(alpha = 0.9) +
@@ -306,6 +314,18 @@ b <-
 (a|b) + 
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "a", title = "PCA of imputed gwas data") 
+
+
+ten <-   covar %>%
+  filter(Sex != "NA") %>%
+  ggplot(aes(PC9, PC10, colour = Sex)) +
+  geom_point(alpha = 0.95, size = 2) +
+  scale_colour_manual(values = c("#a65ca6", "#fcd325"),
+                      labels = c("Male", "Female")) +
+  theme_bw()
+
+ten
+
 
 c <- ggplot(pve, aes(PC, V1, colour = PC)) +
   geom_line(group = "PC", colour = "#454b51") +

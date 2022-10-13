@@ -1,19 +1,19 @@
 #!/bin/bash
 #set -uex
 
-#Notes:
-#Script to impute ancestry of study data based on 1000g data in GChr38 form
-#Run Script as source ~/GWAS_22/Enteric_Fever/GWAS/Post-Impute/Post-imputation_QC/ancestry_check_38.sh
+# Notes:
+# Script to impute ancestry of study data based on 1000g data in GChr38 form
+# Run Script as source ~/GWAS_22/Enteric_Fever/GWAS/Post-Impute/Post-imputation_QC/ancestry_check_38.sh
 
-#Steps:
-##Download ref data
-#Prune for linkage disequilibrium
-#Clean both our ref and study data for AT/CG SNPs and duplicates/CHR mismatches
-#Check SNP annotation, either update ref to CHR:POS:BP or study data to rsIDs
-#Merge data sets (Plink1.9) 
-#PCA of data colour code by ancestry (in R)
+# Steps:
+# Download ref data
+# Prune for linkage disequilibrium
+# Clean both our ref and study data for AT/CG SNPs and duplicates/CHR mismatches
+# Check SNP annotation, either update ref to CHR:POS:BP or study data to rsIDs
+# Merge data sets (Plink1.9) 
+# PCA of data colour code by ancestry (in R)
 
-#Set up directories -------------------------------------------------------
+# Set up directories -------------------------------------------------------
 
 name=all_enteric_QC3 #name of study PLINK files
 refname=all_hg38
@@ -35,24 +35,24 @@ qcdir=$studydir/ancestry
 
 # #Download refernce data -------------------------------------------------------
 
-# # pgen=https://www.dropbox.com/s/e5n8yr4n7y91fyp/all_hg38.pgen.zst?dl=1
-# # pvar=https://www.dropbox.com/s/cy46f1c8yutd1h4/all_hg38.pvar.zst?dl=1
-# # sample=https://www.dropbox.com/s/3j9zg103fi8cjfs/hg38_corrected.psam?dl=1
-# # wget $pgen
-# # mv 'all_hg38.pgen.zst?dl=1' all_hg38.pgen.zst
-# # plink2 --zst-decompress all_hg38.pgen.zst > all_hg38.pgen
-# # wget $pvar
-# # mv 'all_hg38.pvar.zst?dl=1' all_hg38.pvar.zst
-# # wget $sample
-# # mv 'hg38_corrected.psam?dl=1' all_hg38.psam
+pgen=https://www.dropbox.com/s/e5n8yr4n7y91fyp/all_hg38.pgen.zst?dl=1
+pvar=https://www.dropbox.com/s/cy46f1c8yutd1h4/all_hg38.pvar.zst?dl=1
+sample=https://www.dropbox.com/s/3j9zg103fi8cjfs/hg38_corrected.psam?dl=1
+wget $pgen
+mv 'all_hg38.pgen.zst?dl=1' all_hg38.pgen.zst
+plink2 --zst-decompress all_hg38.pgen.zst > all_hg38.pgen
+wget $pvar
+mv 'all_hg38.pvar.zst?dl=1' all_hg38.pvar.zst
+wget $sample
+mv 'hg38_corrected.psam?dl=1' all_hg38.psam
 
-# echo 1000g data download DONE
+echo 1000g data download DONE
 
-# #Move files into new folders
-# mv *$refname* $refdir 
-# cp *$name* $qcdir
+# Move files into new folders
+mv *$refname* $refdir 
+cp *$name* $qcdir
 
-# #Convert to Bed
+# Convert to Bed
 plink2 \
 --pfile $refdir/$refname vzs --max-alleles 2 \
 --allow-extra-chr \
@@ -61,11 +61,11 @@ plink2 \
 --out $refdir/$refname
 mv $refdir/$refname.log $log
 
-# # 1) Tidy Study and Reference data---------------------------------------------------
+# 1) Tidy Study and Reference data ---------------------------------------------------
 
 cd $qcdir
 
-# # 1a) Prune Study Data --------------------------------------------------
+# 1a) Prune Study Data --------------------------------------------------------------
 plink2 \
 --bfile $qcdir/$name \
 --indep-pairwise 50 5 0.2 \
@@ -78,8 +78,8 @@ plink2 \
 --make-bed \
 --out $qcdir/$name.LD
 
-# # 2) Remove AC-GT SNPs -----------------------------------------------------
-# #(these snps are difficult to merge)
+# 2) Remove AC-GT SNPs -----------------------------------------------------
+# (these snps are difficult to merge)
 
 awk 'BEGIN {OFS="\t"}  ($5$6 == "GC" || $5$6 == "CG" \
                         || $5$6 == "AT" || $5$6 == "TA")  {print $2}' \
@@ -128,8 +128,8 @@ cd $qcdir
 
 # rm -f *$refname.no_acgt* 
 
-# # 4) Filter reference data for study SNPs -----------------------------------------------
-# # 4a) Update ref chromsome annotation in bim file 
+# 4) Filter reference data for study SNPs -------------------------------------------------
+# 4a) Update ref chromsome annotation in bim file 
 awk '{if ($1 != 0) print $2,"chr"$2}' $refname.cleaned.bim > updateFormat.txt
 echo make update name file DONE
 
@@ -140,7 +140,7 @@ plink2 \
 --out $refname.cleaned
 
 
-# # 4b) Filter reference data for study SNPs -----------------------------------------------
+# 4b) Filter reference data for study SNPs -----------------------------------------------
 awk '{print $2}' $name.cleaned.bim > keep_list
 
 echo keep list - Done
@@ -154,9 +154,9 @@ plink2 \
 echo Keep list - Done
 
 
-#Test merge _----------------------------------------------------------------
-#This gives us a list of snps which we can exclude
-#You could also flip the snps and try remerging, but that's not necessary here
+# Test merge _----------------------------------------------------------------
+# This gives us a list of snps which we can exclude
+# You could also flip the snps and try remerging, but that's not necessary here
 
 plink \
 --bfile $name.cleaned \
@@ -183,7 +183,7 @@ plink2 \
 --out $qcdir/$refname.cleanMerge
 
 rm -f $refname.forMerge 
-#Remerge -----------------------------------------------------------------------
+# Remerge -----------------------------------------------------------------------
 
 plink \
 --bfile $name.cleaned \
@@ -199,21 +199,20 @@ plink \
 --make-bed \
 --out 1KG.merged
 
-
-#move log files
+# Move log files
 mv *.log $log
 rm *.nosex
 
 echo File cleaning done
 
 # Relatedness check ----------------------------------------------------------------
-#Fliter related participants
-#calculate IBD using plink --genome flag and filter using pi-hat score
-#Should rerun this pre-pcs further analysis
+# Fliter related participants in IKG data and study data
+# calculate IBD using plink --genome flag and filter using pi-hat score
+# Should rerun this pre-pcs further analysis
 
-#Remove related samples 1KG
-#https://www.cog-genomics.org/plink/2.0/resources#1kg_phase3
-#Download file - add wget code
+# Remove related samples 1KG
+# https://www.cog-genomics.org/plink/2.0/resources#1kg_phase3
+# Download file - add wget code
 
 nosib=https://www.dropbox.com/s/129gx0gl2v7ndg6/deg2_hg38.king.cutoff.out.id?dl=1
 
@@ -230,7 +229,7 @@ plink \
 --missing \
 --out 1KG.merged
 
-#Remove one sample from each pair with pi-hat (% IBD) above threshold (0.1875 below):
+# Remove one sample from each pair with pi-hat (% IBD) above threshold (0.1875 below):
 awk '$10 >= 0.1875 {print $1, $2}' $qcdir/1KG.merged.genome |\
 uniq > $qcdir/1KG.merged.outliers.txt 
 
@@ -244,18 +243,18 @@ plink2 \
 --remove $qcdir/1KG.merged.outliers.txt \
 --make-bed \
 --out $qcdir.1KG.merged.IBD
-#Works :)
+# Works :)
 
-# PCA ----------------------------------------------------------------------------------------------------------------------
+# PCA ----------------------------------------------------------------------------------------------------------------
 
  plink2 \
  --bfile 1KG.merged.IBD\
  --pca \
  --out 1KG.merged
 
-# Update fam file and extract pop data ---------------------------------------------------------------------------------------------------
+# Update fam file and extract pop data -------------------------------------------------------------------------------
 
-#Earlier conversion of .psam to .fam lost pheno/pop data of 1KG participants
+# Earlier conversion of .psam to .fam lost pheno/pop data of 1KG participants
 # Eigenvec file has FID (0s) IID PC1-10
 # get ID and pop from original psam file 
 # psam file needs an updated FID column
@@ -267,6 +266,6 @@ cut -f 1,7-12 > $qcdir/$refname.psam #remove extra columns
 awk '{print $1, $2, $6, $7, $8}' $qcdir/$refname.psam > $qcdir/1kG.ID2Pop.txt #file for R to use
 
 
-# Plot in R ------------------------------------------------------------------
+# Plot in R -----------------------------------------------------------------------------------------------------------
 
 Rscript $qcdir/pop_pca_plot.R
