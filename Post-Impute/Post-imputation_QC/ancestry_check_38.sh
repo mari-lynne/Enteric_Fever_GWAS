@@ -1,9 +1,10 @@
 #!/bin/bash
-#set -uex
+set -uex
 
 # Notes:
 # Script to impute ancestry of study data based on 1000g data in GChr38 form
-# Run Script as source ~/GWAS_22/Enteric_Fever/GWAS/Post-Impute/Post-imputation_QC/ancestry_check_38.sh
+# Run Script as:
+# source ~/GWAS_22/Enteric_Fever_GWAS/Post-Impute/Post-imputation_QC/ancestry_check_38.sh
 
 # Steps:
 # Download ref data
@@ -15,23 +16,23 @@
 
 # Set up directories -------------------------------------------------------
 
-name=all_enteric_QC3 #name of study PLINK files
+name=typhoid.IBD #name of study PLINK files
 refname=all_hg38
 
-studydir=/home/mari/GWAS_22/new_gwas/QC
+studydir=/home/mari/GWAS_22/new_gwas/just_typhoid/QC # contains IBD.bed files
 
 #Set up folder for reference genome download
 #mkdir -p $studydir/ref
 refdir=$studydir/ref
 
-#Set up log folder
-#mkdir -p $refdir/plink_log
-log=$refdir/plink_log
-
 #Set up folder for ancestry qc of study and reference data
-#mkdir -p $studydir/ancestrty
-qcdir=$studydir/ancestry
-# #qcdir will contain the cleaned study and refernce data
+#mkdir -p $studydir/qc_ancestrty
+qcdir=$studydir/qc_ancestry
+# #qcdir will contain the cleaned study and reference data
+
+#Set up log folder
+mkdir -p $refdir/plink_log
+log=$refdir/plink_log
 
 # #Download refernce data -------------------------------------------------------
 
@@ -50,7 +51,7 @@ echo 1000g data download DONE
 
 # Move files into new folders
 mv *$refname* $refdir 
-cp *$name* $qcdir
+#cp *$name* $qcdir
 
 # Convert to Bed
 plink2 \
@@ -59,7 +60,7 @@ plink2 \
 --autosome \
 --make-bed \
 --out $refdir/$refname
-mv $refdir/$refname.log $log
+
 
 # 1) Tidy Study and Reference data ---------------------------------------------------
 
@@ -71,6 +72,7 @@ plink2 \
 --indep-pairwise 50 5 0.2 \
 --out $qcdir/$name.LD
 
+# 1b) Prune Ref Data
 plink2 \
 --bfile $qcdir/$name \
 --allow-extra-chr \
@@ -91,17 +93,20 @@ awk 'BEGIN {OFS="\t"}  ($5$6 == "GC" || $5$6 == "CG" \
                         || $5$6 == "AT" || $5$6 == "TA")  {print $2}' \
     $refdir/$refname.bim  > \
     $qcdir/$refname.acgt #save ref_genome without ac/gt snps list to qc directory
+
 cd $qcdir
 
 echo AC-GT SNP list done
 
-# plink2 \
+# Clean study data
+plink2 \
 --bfile $qcdir/$name.LD \
 --exclude $qcdir/$name.acgt \
 --make-bed \
---out $qcdir/$name.no_acgt  #clean study data
-   
-# plink2 \
+--out $qcdir/$name.no_acgt  
+
+# Clean ref data
+plink2 \
 --bfile $refdir/$refname \
 --allow-extra-chr \
 --exclude $qcdir/$refname.acgt \
@@ -109,7 +114,7 @@ echo AC-GT SNP list done
 --out $qcdir/$refname.no_acgt 
 
 
-# 2b) Remove duplicated snps and keep just atcg snps -------------------------------------------------
+# 3) Remove duplicated snps and keep just atcg snps -------------------------------------------------
 plink2 \
 --bfile $qcdir/$name.no_acgt \
 --snps-only just-acgt \
@@ -117,14 +122,12 @@ plink2 \
 --make-bed \
 --out $qcdir/$name.cleaned
 
-# plink2 \
---bfile $qcdir/$refname.no_acgt \
+plink2 \
+--bfile $refdir/$refname.no_acgt \
 --snps-only just-acgt \
 --rm-dup exclude-all \
 --make-bed \
 --out $qcdir/$refname.cleaned
-
-cd $qcdir
 
 # rm -f *$refname.no_acgt* 
 
@@ -154,7 +157,7 @@ plink2 \
 echo Keep list - Done
 
 
-# Test merge _----------------------------------------------------------------
+# 5a) Test merge _----------------------------------------------------------------
 # This gives us a list of snps which we can exclude
 # You could also flip the snps and try remerging, but that's not necessary here
 
@@ -183,7 +186,7 @@ plink2 \
 --out $qcdir/$refname.cleanMerge
 
 rm -f $refname.forMerge 
-# Remerge -----------------------------------------------------------------------
+# 5b) Remerge -----------------------------------------------------------------------
 
 plink \
 --bfile $name.cleaned \
@@ -199,13 +202,7 @@ plink \
 --make-bed \
 --out 1KG.merged
 
-# Move log files
-mv *.log $log
-rm *.nosex
-
-echo File cleaning done
-
-# Relatedness check ----------------------------------------------------------------
+# 6) Relatedness check ----------------------------------------------------------------
 # Fliter related participants in IKG data and study data
 # calculate IBD using plink --genome flag and filter using pi-hat score
 # Should rerun this pre-pcs further analysis
@@ -242,17 +239,17 @@ plink2 \
 --bfile $qcdir/1KG.merged.no_sib \
 --remove $qcdir/1KG.merged.outliers.txt \
 --make-bed \
---out $qcdir.1KG.merged.IBD
+--out $qcdir/1KG.merged.IBD
 # Works :)
 
-# PCA ----------------------------------------------------------------------------------------------------------------
+# 7a) Ancestry PCA ----------------------------------------------------------------------------------------------------------------
 
  plink2 \
- --bfile 1KG.merged.IBD\
+ --bfile 1KG.merged.IBD \
  --pca \
- --out 1KG.merged
+ --out 1KG.merged 
 
-# Update fam file and extract pop data -------------------------------------------------------------------------------
+# 7a i) Update fam file and extract pop data -------------------------------------------------------------------------------
 
 # Earlier conversion of .psam to .fam lost pheno/pop data of 1KG participants
 # Eigenvec file has FID (0s) IID PC1-10
@@ -265,7 +262,28 @@ cut -f 1,7-12 > $qcdir/$refname.psam #remove extra columns
 
 awk '{print $1, $2, $6, $7, $8}' $qcdir/$refname.psam > $qcdir/1kG.ID2Pop.txt #file for R to use
 
+# 7b) Study PCA
+ plink2 \
+ --bfile $qcdir/$name.LD \
+ --pca \
+ --out $qcdir/$name.LD 
 
-# Plot in R -----------------------------------------------------------------------------------------------------------
 
-Rscript $qcdir/pop_pca_plot.R
+# 8) Plot in R -----------------------------------------------------------------------------------------------------------
+
+#Rscript $qcdir/pop_pca_plot.R
+
+# Move log files
+mv *.log $log
+rm *.nosex
+rm *.zst
+
+mkdir $studydir/pca
+mv *.eigenval $studydir/pca
+mv *.eigenvec $studydir/pca
+mv 1kG.ID2Pop.txt $studydir/pca
+rm -f *no_acgt.bed
+rm -f *no_acgt.bim
+rm -f *no_acgt.fam
+
+echo File cleaning done
