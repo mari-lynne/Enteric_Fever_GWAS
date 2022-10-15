@@ -1,15 +1,16 @@
-!#/bin/bash
+#!/bin/bash
 
+# IBD script checking
 #source ~/GWAS_22/Enteric_Fever_GWAS/Pre-Impute/IBD.sh
 
-#IBD script
-
+# Oct 22 - double check with all_enteric_qc3.cleaned (i.e pca file)
 
 #dir=/home/mari/GWAS_22/new_gwas/Post-imp/merged
-dir=/home/mari/GWAS/all_enteric/clean_data/post-impute/Plink
-data=enteric_QC #plink file prefix
+# home/mari/GWAS/all_enteric/clean_data/post-impute/Plink
+dir=/home/mari/GWAS_22/new_gwas/just_typhoid
+data=typhoid  #plink file prefix
 
-#cd /home/mari/GWAS_22/new_gwas/QC
+cd /home/mari/GWAS_22/new_gwas/just_typhoid/QC
 
 plink \
 --bfile $dir/${data} \
@@ -30,14 +31,17 @@ plink2 \
 --make-bed \
 --out $data.IBD
 
-#initial run 349 - 309 samples but that's because RC samples are in there
-#try without patch samples = 319 participants
-#Double check VAST rpt samples too 
-#313 participants, 5 participants fail
+
+# Initial run 349 - 309 samples but that's because RC samples are in there
+# Try without patch samples = 319 participants
+# Double check VAST rpt samples too 
+# 313 participants, 5 participants fail
 
 #0 8585 8648 46 1 14 97
-IID1 IID2 PI_HAT
-8585 8243 0.5248 #Cousins/sibling pair
-8648 8414 0.9999 #sample done twice?
-46 28 0.5065 #
-14 31 0.4884
+# IID1 IID2 PI_HAT
+# 8585 8243 0.5248 #Cousins/sibling pair
+# 8648 8414 0.9999 #sample done twice?
+# 46 28 0.5065 #
+# 14 31 0.4884
+
+# So I removed legit siblings from file already, but, ran pca with repeat samples needs to be done separately
