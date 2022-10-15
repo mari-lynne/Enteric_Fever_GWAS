@@ -5,6 +5,10 @@ date: "11/03/2022"
 output: html_document
 ---
 
+ Updates October - Making seperate typhoid, para and merged plink files
+ More stringent imputation R2 score, plink2 pfiles VAST_concat, P1T1
+
+
 ```{r setup, include=FALSE, eval=TRUE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged')
@@ -17,12 +21,13 @@ library(stringr)
 library(dplyr)
 library(plinkQC)
 
- Updates October - Making separate typhoid, para and merged plink files
- More stringent imputation R2 score, plink2 pfiles VAST_concat, P1T1
- 
- 
- 
 ```
+
+```{bash check}
+plink2 --pfile VAST_concat --validate --out check_vast
+
+```
+
 
 ```{bash P1 T1 QC}
 plink2 --bfile VAST_concat --geno 0.1 --mind 0.1 --make-bed --out VAST_imp_QC
