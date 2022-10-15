@@ -1,0 +1,235 @@
+---
+title: "Genetic Associations of Susceptibility to Typhoid Fever"
+author: "Mari Johnson"
+date: "2022-10-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/just_typhoid/assoc')
+
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(qqman)
+library(tidylog)
+library(stringr)
+
+```
+
+### Aims:
+
+-   Using imputed and cleaned data, associate genome-wide SNP frequency in our cohort with susceptibility/protection from typhoid fever following oral challenge (GWAS)
+-   Association analysis can be modified to also look at regions of interest (CGAS)
+-   Check Q-Q plot and genomic inflation values
+-   Visualise GWAS significance with Manhattan plots
+-   Interaction testing of covariates
+-   Filter and format top hit data for downstream annotation
+
+### Linear Regression GWAS models
+
+Plink2 fits generalised linear mixed effects model:
+
+y = G𝛽 + C𝛽 + e
+
+-   Where, y is our response variable - ReSVinet score
+-   G is our genotype dosage matrix
+-   C is our covariate matrix
+-   e is the error standard error (or residual) of our model estimate
+-   𝛽 are our model coefficients of determination. So, for each SNP we are modelling whether zero, one or two copies of an allele in our population, against our linear y variable, RSV severity.
+
+We then test to see if there is a relationship between allele dosage and outcome, how strong the effect is, if it is significant
+
+The null hypothesis is that there is no linear relationship. Therefore if;\
+𝛃 = 0 the allele shows no relationship with our phenotype score\
+𝛃 \> 0 the allele is associated with a more positive score\
+𝛃 \< 0 the allele is associated with a more negative score
+
+The significance of this relationship is tested by calculating the T statistic:\
+\
+**t = b / SE** - **b** is the estimated value of linear slope or the coefficient of the predictor variable.\
+ - **SE~*b*~** represents the standard error of the coefficient estimation which can be estimated using the following formula: \
+- **SE = S / √N** Where S represents the standard deviation and N represents the total number of data points
+
+If the p-value that corresponds to t is less than some threshold (e.g. α = .05); then we reject the null hypothesis and conclude that there is a statistically significant relationship between the predictor variable and the response variable
+
+### Case-control analysis
+
+-   General linear association model (GLM): Diagnosis
+-   Covariates to include: PCs, Sex, <https://www.cog-genomics.org/plink/2.0/assoc>
+
+```{bash GWAS Enteric fever}
+plink2 --bfile typhoid.IBD \
+--pheno ~/GWAS_22/new_gwas/just_typhoid/meta/typhoid_pheno.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/new_gwas/just_typhoid/meta/typhoid_covar.txt \
+--covar-name Sex, chall_vax, Age, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--out T_assoc
+```
+
+New PCs lamda (check using --adjust flag) = 1, no genomic inflation :) 
+
+#### Interaction testing
+
+Warning message: \--glm remaining control count is less than 10x predictor count for phenotype 'Diagnosed'\
+As I now have a much smaller sample size and more covariates I have 10 covariates which will be less than 1/10th of our n 153.
+
+I am already thinking there is probably issues with linear dependencies based on the covar, i.e with dose (poss concat this with challenge).\
+To many covars and too small an n can overfit model.\
+Therefore test for significance of these factors in linear model.\
+Remove least significant covars.
+
+-   covar standardise necessary, but does pass VIF test (=2)
+
+```{bash GWAS Covar checking}
+mkdir covar_checks 
+plink2 --bfile typhoid.IBD \
+--pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/new_gwas/meta/final_metadata/T_covar_Jun.txt \
+--covar-name Sex, Challenge, Dose, Vaccine, Age, PC1, PC2, PC3, PC4, PC5 \
+--glm genotypic interaction \
+--covar-variance-standardize \
+--out covar_checks/check
+
+```
+
+
+```{r Interaction test}
+
+interact <- fread("covar_checks/check.Diagnosed.glm.logistic.hybrid")
+colnames(interact) <-
+  c("CHR","BP", "SNP","REF","ALT","A1",
+    "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE",
+    "Z_STAT", "P","ERRCODE")
+
+# Remove unnecessary columns
+interact <- interact %>% 
+  select(!c(ALT, OBS_CT,`FIRTH?`,`LOG(OR)_SE`, Z_STAT, OR)) 
+
+interact$TEST <- as.factor(interact$TEST)
+levels(interact$TEST)
+
+VIF_high <- filter(interact, ERRCODE == "VIF_TOO_HIGH")
+table(VIF_high$TEST)
+
+VIF_ADD <- filter(interact, TEST == "ADD")
+
+# 1947595 - VIF too high, are these for low sig snps?
+# Filter for top SNPS? Then look at interaction factor sig
+# Combine vaccine and challenge into one factor
+
+# Just vaccine 
+vax <- interact[(interact$TEST == "Vaccine"),]
+vax %>%
+  group_by(ID) %>%
+  ggplot(aes(
+    x = TEST,
+    y = -log10(P),
+    fill = TEST
+  )) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(x = "\nCovariate", title = "Interaction Tests") +
+  theme(legend.position = "none")
+
+# ADD
+geno <- interact %>% filter(TEST == "ADD")
+geno <- filter(geno, P <1e-2) #topsnps = <10e-4
+snps <- geno$SNP
+top <- filter(ADD, SNP %in% snps)
+
+# glm is fitting a model per snp, therefore get an overview of covars
+tiff(file = "interaction_snps.tiff",
+     res = 720,
+     width = 7500, height = 5000,
+     compression = "lzw")
+top %>% group_by(SNP) %>%
+  ggplot(aes(
+    x = TEST,
+    y = -log10(P),
+    fill = TEST
+  )) + geom_boxplot() +
+  theme_bw() + labs(x = "\nCovariate", title = "Interaction Tests") + theme(legend.position = "none")
+dev.off()
+
+
+# Make new factor - updated in pca_plot script too
+covar$chall_vax <- str_c(covar$Challenge, covar$Vaccine, sep = "_")
+covar$chall_vax <- as.factor(covar$chall_vax)
+```
+
+
+
+### Assoc Results
+
+```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
+
+
+# Typhod Assoc -----------------------------------------------------------------
+gwas <- fread("T_assoc.Diagnosed.glm.logistic.hybrid")
+
+gwas <-
+  filter(gwas, TEST == "ADD") 
+
+# Rename cols for qqman
+colnames(gwas) <-
+  c("CHR","BP", "SNP","REF","ALT","A1",
+    "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE",
+    "Z_STAT", "P","ERRCODE"
+  )
+
+gwas <- select(gwas, !c(`FIRTH?`,ERRCODE)) 
+
+write.table(gwas, file = "gwas_typhoid.txt", quote = F, row.names= F, sep = "\t")
+
+
+# Inspect top snps: ------------------------------------------------------------
+
+tophits <- filter(gwas, P < 10e-5) 
+write.table(tophits, file = "tophits_typhoid.txt", quote = F, row.names= F, sep = "\t")
+
+
+#### Manhattan Plots
+
+```{r}
+# Plot Manhattan
+manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("mediumseagreen", "darkolivegreen4"))
+
+pdf(file =(paste(plot_dir,"manhattan_typhoid.pdf",sep ="")), paper = "a4r")
+manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("mediumseagreen", "darkolivegreen4"))
+dev.off()
+
+#qq_plot
+
+qq(gwas$P)
+# More deflated :(
+
+# See plotting2.R for more data viz
+```
+
+
+```{bash}
+# Prep for annotation
+# cut in bash
+
+cut -f 3 tophits22.txt > explore_hits.txt
+sed -i 's/chr//g' explore_hits.txt
+cut -d ':' -f 1,2 explore_hits.txt > explore_hits2.txt
+
+# Updates - server did not work, try fuma
+```
+
+```{r gtex}
+
+gtex <- read.csv(file = "gtex.csv")
+gtex <- drop_na(gtex) %>% filter(dbSNP != "none")
+gtex$tissue <- rep("Lung", length(gtex$dbSNP))
+gtex <- gtex[1:400,]
+write.csv(gtex, file = "gtex_lung.csv", row.names = F, quote = F)
+
+```
