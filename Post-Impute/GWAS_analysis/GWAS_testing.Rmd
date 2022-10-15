@@ -100,9 +100,7 @@ interact <- interact %>%
   select(!c(ALT, OBS_CT,`FIRTH?`,ERRCODE)) #slims data so it's quicker tbh
 
 # Just vaccine 
-
 vax <- interact[(interact$TEST == "Vaccine"),]
-
 
 vax %>% group_by(ID) %>%
   ggplot(aes(
@@ -114,7 +112,6 @@ vax %>% group_by(ID) %>%
 
 
 # ADD
-
 ADD <- interact[(str_detect(interact$TEST,"ADD")),]
 geno <- ADD %>% filter(TEST == "ADD")
 geno <- filter(geno, P <10e-3) #topsnps = <10e-4
@@ -122,7 +119,6 @@ snps <- geno$SNP
 top <- filter(ADD, SNP %in% snps)
 
 # glm is fitting a model per snp, therefore get an overview of covars
-
 tiff(file = "interaction_moresnps.tiff",
      res = 720,
      width = 7500, height = 5000,
@@ -138,7 +134,6 @@ dev.off()
 
 # Remove dose and sex maybe
 # Dom model check
-
 DOM <- interact[(str_detect(interact$TEST,"DOM")),]
 geno <- DOM %>% filter(TEST == "DOMDEV")
 geno <- filter(geno, P <10e-4) #topsnps = <10e-4
@@ -160,7 +155,6 @@ dev.off()
 
 #### Updated associations
 
-
 ```{bash update assoc}
 plink2 --bfile ~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/enteric_maf \
 --pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt \
@@ -177,6 +171,7 @@ plink2 --bfile ~/GWAS_22/new_gwas/Post-imp/Merged/Assoc/June/enteric_maf \
 # Dont need to standardise, check logistic reg options
 
 ```
+
 ```{bash fcyr assoc sep}
 plink2 --bfile fcyr \
 --pheno ~/GWAS_22/new_gwas/meta/final_metadata/T_pheno_Jun.txt \
@@ -187,8 +182,8 @@ plink2 --bfile fcyr \
 --glm \
 --out T_sep
 ```
-Notes:
-Add in PC6? More stringent MAF? More stringent imputation filter
+
+Notes: Add in PC6? More stringent MAF? More stringent imputation filter
 
 ```{bash MAF}
 plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 \
@@ -198,8 +193,6 @@ plink2 --bfile ~/GWAS_22/new_gwas/QC/all_enteric_QC3 \
 
 
 ```
-
-
 
 ### Plot results
 
