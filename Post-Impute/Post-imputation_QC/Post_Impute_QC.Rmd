@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE, eval=TRUE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged/Assoc')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged')
 #Assoc folder switched to after merging
 ```
 
@@ -17,49 +17,30 @@ library(stringr)
 library(dplyr)
 library(plinkQC)
 
-#PLINKQC Set up
-indir<-"~/GWAS_22/new_gwas/Post-imp/Merged"
-qcdir<-"~/GWAS_22/new_gwas/Post-imp/Merged"
-name<-"VAST_concat"
-path2plink <- "/home/mari/bin/plink"
-
+ Updates October - Making separate typhoid, para and merged plink files
+ More stringent imputation R2 score, plink2 pfiles VAST_concat, P1T1
+ 
+ 
+ 
 ```
 
-### PlinkQC plots
-```{r PlinkQC plots, eval=FALSE}
-fail_markers <- perMarkerQC(indir=indir, qcdir=qcdir, name=name,
-                            path2plink=path2plink, mafTh = 0.05,
-                            verbose=TRUE, interactive=TRUE,
-                            showPlinkOutput=FALSE)
-fail_markers$p_markerQC
-
-```
-
-```{bash QC VAST PATCH GWAS}
+```{bash P1 T1 QC}
 plink2 --bfile VAST_concat --geno 0.1 --mind 0.1 --make-bed --out VAST_imp_QC
-plink2 --bfile VAST_imp_QC --geno 0.05 --mind 0.05 --maf 0.01 --make-bed --out VAST_imp_QC2
-
+plink2 --bfile VAST_imp_QC --geno 0.05 --mind 0.05 --maf 0.05 --make-bed --out VAST_imp_QC2
 #filter SNPs that are missing from 0.1% of individuals
-#0 varients removed due to geno? Is this because I filtered pre-imputation, gives better imputation accuracy
+#0 variants removed due to geno? Is this because I filtered pre-imputation, gives better imputation accuracy
 ```
-16873950 variants loaded from VAST_imp_QC.bim.
-7396147 variants removed due to allele frequency threshold(s)
-947,7803 variants remaining after main filters.
 
 ```{bash P1 T1 QC}
 plink2 --bfile P1T1 --geno 0.1 --mind 0.1 --make-bed --out P1T1_imp_QC
-plink2 --bfile P1T1_imp_QC --geno 0.05 --mind 0.05 --maf 0.01 --make-bed --out P1T1_imp_QC2
+plink2 --bfile P1T1_imp_QC --geno 0.05 --mind 0.05 --maf 0.05 --make-bed --out P1T1_imp_QC2
 #SNPs missing from 5% of population MAF <5 %
 #So out of 340 the SNPs would have to be in 12 people
 #10% cut off is probably better for assoc analysis in 34 people
 
 ```
-7944509 variants removed due to allele frequency threshold(s)
-895,0259 variants remaining after main filters.
-((16894768 - 7944509)/16894768)*100 = 52% removed
-
-
 ### Merge
+
 ```{bash Merge VAST_PATCH and P1T1}
 plink --bfile VAST_imp_QC2 --bmerge P1T1_imp_QC2 --out enteric
 #This has mostly worked!! 9 million SNPs imputed
@@ -79,15 +60,18 @@ plink2 --bfile all_enteric_QC --geno 0.05 --maf 0.01 --make-bed --out all_enteri
 
 ### PCA
 
-- Use a PCA to account for population structure in data
-- Check ancestry first by plotting PCA and colour coding by ethnicity
-- Can also merge with public population databases
+-   Use a PCA to account for population structure in data
 
-- Include PCA's as covariates in assocation model
+-   Check ancestry first by plotting PCA and colour coding by ethnicity
+
+-   Can also merge with public population databases
+
+-   Include PCA's as covariates in assocation model
 
 ```{bash Run PCA}
 plink2 --bfile all_enteric_QC2 --pca
 ```
+
 ```{r Set up PCA in R, eval=TRUE}
 pca <- fread("plink2.eigenvec")
 library("ggplot2")
@@ -133,5 +117,4 @@ p + labs(x = "Principle Component", y = "Percentage Varience Explained")
 
 ### Conclusions
 
-- Include first 5 PC's as covariates in association analysis
-
+-   Include first 5 PC's as covariates in association analysis
