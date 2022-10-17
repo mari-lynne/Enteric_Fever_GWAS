@@ -7,7 +7,7 @@
 
 # Load data --------------------------------------------------------------------
 
-setwd("/home/mari/GWAS_22/new_gwas/just_typhoid/QC/pca")
+setwd("/home/mari/GWAS_22/gwas_final/merge/QC/pca")
 
 # Load packages
 
@@ -29,7 +29,7 @@ args <- commandArgs(TRUE)
 root <- args[1]
 
 PCA <- read_delim(
-  "1KG.merged.eigenvec",
+  "all_hg38.LD.eigenvec",
   delim = "\t",
   escape_double = FALSE,
   trim_ws = TRUE
@@ -52,7 +52,6 @@ pop <- pop %>% rename(IID = `#IID`)
 merge <- full_join(PCA, pop, by = "IID")
 
 # Plot ancestry set up ---------------------------------------------------------
-
 # Define colour palette for populations
 # Super pop
 
@@ -129,6 +128,8 @@ c <-
   geom_point() + scale_colour_manual(values = KG_Palette_Super) +
   theme_bw()
 
+c
+
 d <- 
   ggplot(merge, aes(PC4, PC5, colour = SuperPop)) +
   geom_point() + scale_colour_manual(values = KG_Palette_Super) +
@@ -158,7 +159,7 @@ i <- ggplot(merge, aes(PC9, PC10, colour = Population)) +
   geom_point() + scale_colour_manual(values = KG_Palette) +
   theme_bw() 
 
-
+i
 
 pdf("all_ancestry_PCAs.pdf")
 a
@@ -189,7 +190,7 @@ dev.off()
 
 # Add pc variance --------------------------------------------------------------
 
-eigenval <- fread("1KG.merged.eigenval")
+eigenval <- fread("all_hg38.LD.eigenval")
 pve <- data.frame(PC = 1:10, pve = (eigenval/sum(eigenval)*100))
 pve$PC <- as.factor(pve$PC)
 
@@ -216,8 +217,8 @@ ggsave("pve_ancestry.png")
 # PCA - Just study data  -------------------------------------------------------
 
 # Load data
-pca <- fread("typhoid.IBD.LD.eigenvec")
-eigenval <- fread("typhoid.IBD.LD.eigenval")
+pca <- fread("typhoid.LD.eigenvec")
+eigenval <- fread("typhoid.LD.eigenval")
 
 # Basic PCA
 ggplot(data = pca, aes(PC1, PC2)) + geom_point()
@@ -234,6 +235,9 @@ ggplot(pve, aes(PC, V1, colour = PC)) +
   ylab("\nProportion of Variance (%)\n") +
   scale_colour_manual(values = PC_Palette) +
   theme(legend.position = "none")
+ggsave("pve_study.png")
+
+
 # Use these PCs in GLM model
 
 # PCA by outcome  -------------------------------------------------------

@@ -19,12 +19,6 @@ OUT_DIR=~/GWAS_22/gwas_final/P1T1
 REF_DIR=~/GWAS/TOPMED_impute
 FILENAME=P1T1
 
-PASSWORD=ZwsPt8ab0GYrdU
-
-# Unzip TopMED files-----------------------------------------------------
-for f in *.zip; do unzip -P "{$PASSWORD}" -d  ${dir} $f; done
-echo "Unzip files - DONE"
-
 # Post-impute filtering of vcf.gz files --------------------------------
 for chr_n in {1..22}; do 
 

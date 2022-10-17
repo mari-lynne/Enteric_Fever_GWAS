@@ -5,13 +5,14 @@ date: "11/03/2022"
 output: html_document
 ---
 
- Updates October - Making seperate typhoid, para and merged plink files
- More stringent imputation R2 score, plink2 pfiles VAST_concat, P1T1
+ Updates October:
+ - Re-indexed and merged bcf files to get a more stringent R2
+ - Making separate typhoid, para and merged plink files
 
 
 ```{r setup, include=FALSE, eval=TRUE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/Post-imp/Merged')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge')
 #Assoc folder switched to after merging
 ```
 
@@ -20,48 +21,171 @@ library(data.table)
 library(stringr)
 library(dplyr)
 library(plinkQC)
-
+library(tidylog)
+library(janitor)
 ```
 
-```{bash check}
-plink2 --pfile VAST_concat --validate --out check_vast
+### Check Merge
 
+```{r Tidy-fam-IID}
+
+fam <- fread("merged_data.fam")
+# Clean IID col
+fam2 <- fam
+fam2$V2 <-  str_remove_all(fam$V2, "^([0-9]+_)")
+
+update_ids <- bind_cols(fam$V1, fam$V2, fam2$V1, fam2$V2)
+
+write.table(update_ids, "update_ids.txt", col.names = F, row.names = F, quote = F, sep = '\t')
+
+system("plink --bfile merged_data --update-ids update_ids.txt --make-bed --out merge_rn")
+#TODO let plink2 know about error
+```
+
+#### Update covar and pheno files
+
+**Key**
+Strain: C, P = 3, T = 1, TN = 2
+Sex M=1, F=2
+Re-challenge N=1, PP=2, PT=3, TP=4, TT=5
+Vaccine: NONE = 0, Ty21a = 1, M01ZH09= 2, Vi-PS = 3, Vi-TT= 4
+
+```{r typhoid}
+# covar checks
+pheno <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_pheno_num.txt")
+covar <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_covar_june.txt")
+
+#old files
+covar2 <- fread("~/GWAS_22/new_gwas/meta/covar.txt")
+pheno2 <- fread("~/GWAS_22/new_gwas/meta/pheno.txt")
+covar2 <- left_join(pheno2, covar2, by ="GENOTYPING_ID")
+
+# Make new chall_vax variable
+covar$chall_vax <- str_c(covar$Challenge, covar$Vaccine)
+
+covar <- clean_names(covar)
+covar <- covar %>% dplyr::rename(IID = iid)
+
+# Filter
+covar_enteric <- covar %>% filter(re_challenge == 1)
+covar_typhoid <- covar %>% filter(challenge != 3, re_challenge  != 5)
+covar_para <- covar %>% filter(challenge == 3, re_challenge  != 2)
+
+# Pheno updates
+pheno_enteric <- covar_enteric[,c(1,5)]
+pheno_typhoid <- covar_typhoid[,c(1,5)]
+pheno_para <- covar_para[,c(1,5)]
+
+# Check sample covar pheno ID info ---------------------------------------------
+fam <- fread("merge_rn.fam")
+fam <- fam %>% rename(IID = V2)
+missing <- anti_join(fam, covar_enteric, by = "IID")
+missing$IID_2 <- str_remove_all(missing$IID, "^([0-9]+-)")
+#See if data is in old covar files
+check <- filter(covar2, GENOTYPING_ID %in% missing$IID_2) # Found 5 samples :)
+check <- filter(check, !is.na(Diagnosed))
+check <- distinct(check)
+
+check2 <- filter(missing, IID_2 %in% covar2$GENOTYPING_ID)
+
+
+# Tidy data for updating in covarupdating script
+check <- rename(check, IID = GENOTYPING_ID)
+check$Vaccine <- ifelse(check$Vaccine == "None",0,
+                            ifelse(check$Vaccine == "Ty21a",1,
+                                   ifelse(check$Vaccine == "M01ZH09", 2,
+                                          ifelse(check$Vaccine == "Vi-PS", 3,
+                                                 ifelse(check$Vaccine == "Vi-TT", 4,NA)))))
+#Recode strain
+check$Challenge <- as.factor(check$Challenge)
+levels(check$Challenge)
+#C, P = 3, T = 1, TN = 2
+levels(check$Challenge) <- c("3", "1")
+#sex M=1, F=2
+check$Sex <- ifelse(check$Sex == "M", 1, ifelse(check$Sex == "F", 2, NA))
+#Re-challenge
+check$Re_Challenge <- as.factor(check$Re_Challenge)
+#N=1, PP=2, PT=3, TP=4, TT=5
+levels(check$Re_Challenge) <- c("1")
+check <- clean_names(check)
+check <- rename(check, IID_2 = iid)
+
+id <- check2 %>% select(V1, IID, IID_2)
+
+update <- left_join(check, id, by = "IID_2")
+update <- update[,c(20,2:18)]
+# add to covar_enteric
+update$challenge <- as.integer(update$challenge)
+update$re_challenge <- as.integer(update$re_challenge)
+
+covar<- bind_rows(covar, update)
+
+# Remake files
+# Filter
+covar_enteric <- covar %>% filter(re_challenge == 1)
+covar_typhoid <- covar %>% filter(challenge != 3, re_challenge  != 5)
+covar_para <- covar %>% filter(challenge == 3, re_challenge  != 2)
+
+# Pheno updates
+pheno_enteric <- covar_enteric[,c(1,5)]
+pheno_typhoid <- covar_typhoid[,c(1,5)]
+pheno_para <- covar_para[,c(1,5)]
+
+
+# recheck
+'%!in%' <- function(x,y)!('%in%'(x,y))
+fam_miss_covar <- fam[(fam$IID %!in% covar_enteric$IID),]
+# Still missing 010, 047, 078, 087, 002
+# zeros removed from IDs 
+
+# Just need to rename covar file 
+extra <- c("010", "047", "078", "087", "002") #did in excel bc i am tired
+write.csv(covar, "covar.csv", row.names = F)
+covar <- fread("covar.csv")
+
+
+# Make keep file
+keep_t <- inner_join(covar_typhoid, fam, by = "IID")
+keep_t <- select(keep_t, V1, IID)
+
+keep_p <- inner_join(covar_para, fam, by = "IID")
+miss <- anti_join(covar_para, fam, by = "IID") #some have patch IDs so need to get old ones
+keep_p <- select(keep_p, V1, IID)
+
+write.table(keep_t, file="keep_t.txt",col.names = F, row.names = F, quote = F, sep = '\t')
+write.table(keep_p, file="keep_p.txt",col.names = F, row.names = F, quote = F, sep = '\t')
+
+files <- mget(ls())
+
+for (i in 1:length(files)){
+  write.table(files[[i]], paste(names(files[i]), ".txt", sep = ""), row.names = F, quote = F, sep = '\t')
+}
+# move to ~/GWAS_22/gwas_final/meta
+
+covar$study <- as.factor(covar$study)
+table(covar$study)
+# Samples
+#P1 PATCH    T1    T2 TYGER  VAST 
+#50    36    38    80    40   102
+```
+#### Typhoid
+
+
+```{bash filter typhoid}
+plink2 --bfile merge_rn --keep keep_t.txt --make-bed --out typhoid
+plink2 --bfile merge_rn --keep keep_p.txt --make-bed --out paratyphoid
 ```
 
 
-```{bash P1 T1 QC}
-plink2 --bfile VAST_concat --geno 0.1 --mind 0.1 --make-bed --out VAST_imp_QC
-plink2 --bfile VAST_imp_QC --geno 0.05 --mind 0.05 --maf 0.05 --make-bed --out VAST_imp_QC2
-#filter SNPs that are missing from 0.1% of individuals
-#0 variants removed due to geno? Is this because I filtered pre-imputation, gives better imputation accuracy
-```
+#### Paratyphoid
 
-```{bash P1 T1 QC}
-plink2 --bfile P1T1 --geno 0.1 --mind 0.1 --make-bed --out P1T1_imp_QC
-plink2 --bfile P1T1_imp_QC --geno 0.05 --mind 0.05 --maf 0.05 --make-bed --out P1T1_imp_QC2
-#SNPs missing from 5% of population MAF <5 %
-#So out of 340 the SNPs would have to be in 12 people
-#10% cut off is probably better for assoc analysis in 34 people
+#### All enteric
 
-```
-### Merge
 
-```{bash Merge VAST_PATCH and P1T1}
-plink --bfile VAST_imp_QC2 --bmerge P1T1_imp_QC2 --out enteric
-#This has mostly worked!! 9 million SNPs imputed
-```
 
-### Include Rechallenge Data
 
-```{bash Include rechallenge data}
-#see ID_updates_march.R script
-#output is all_enteric plink files
 
-plink2 --bfile all_enteric --geno 0.1 --hwe 0.000001 --make-bed --out all_enteric_QC
-plink2 --bfile all_enteric_QC --geno 0.05 --maf 0.01 --make-bed --out all_enteric_QC2
 
-#Rs Ids then updated in pos2rsID.R
-```
 
 ### PCA
 
