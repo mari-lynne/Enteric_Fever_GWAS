@@ -6,8 +6,8 @@ set -ux
 
 # Variables and Directories ---------------------------------------------------------
 
-dir=~/GWAS_22/gwas_final/merge
-data=typhoid
+dir=~/GWAS_22/gwas_final/merge/typhoid
+data=typhoid2
 
 cd ${dir}
 mkdir QC
@@ -19,11 +19,11 @@ cd ${qcdir}
 
 # Filter failed sex check samples ---------------------------------------------------
 
-plink2 \
---bfile ${dir}/${data} \
---remove ${dir}/fail_sex.txt \
---make-bed \
---out ${dir}/${data}
+# plink2 \
+# --bfile ${dir}/${data} \
+# --remove ${dir}/fail_sex.txt \
+# --make-bed \
+# --out ${dir}/${data}
 
 # Calculate IBD in Plink ------------------------------------------------------------
 

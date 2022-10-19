@@ -4,14 +4,16 @@
 # source ~/GWAS_22/Enteric_GWAS/Post-Impute/QC/3.pca_qc.sh
 
 # Variables and Directories -----------------------------------------------------------
-name=typhoid
+name=typhoid2
 ref=all_hg38
 
-dir=~/GWAS_22/gwas_final/merge/QC
+dir=~/GWAS_22/gwas_final/merge/typhoid/QC
 qcdir=${dir}/ancestry
 refdir=${qcdir}/ref
+log=${qcdir}/log
 
 mkdir ${dir}/pca
+pcadir=${dir}/pca
 cd ${qcdir}
 
 # Update fam/psam file and extract pop data ---------------------------------------------
@@ -32,9 +34,9 @@ awk '{print $1, $2, $6, $7, $8}' ${qcdir}/${ref}.psam > ${qcdir}/1kG.ID2Pop.txt
 # Merged study/ancestry PCA ---------------------------------------------------------------
 
  plink2 \
- --bfile ${qcdir}/${ref}.merged.IBD \
+ --bfile ${ref}-${name}.merged.no_sib \
  --pca \
- --out ${qcdir}/${ref}.LD 
+ --out ${ref}-${name}.LD 
 
 # Study PCA ------------------------------------------------------------------------
  
@@ -45,11 +47,10 @@ awk '{print $1, $2, $6, $7, $8}' ${qcdir}/${ref}.psam > ${qcdir}/1kG.ID2Pop.txt
  --pca \
  --out ${qcdir}/${name}.LD 
 
+mv *.eigenval ${pcadir}
+mv *.eigenvec ${pcadir}
+mv 1kG.ID2Pop.txt ${pcadir}
+mv *.log ${log}
+
 # Plot in R -------------------------------------------------------------------------
-
 #Rscript ${qcdir}/pop_pca_plot.R
-
-mv *.eigenval ${dir}/pca
-mv *.eigenvec ${dir}/pca
-mv 1kG.ID2Pop.txt ${dir}/pca
-
