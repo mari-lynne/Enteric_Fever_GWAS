@@ -141,126 +141,30 @@ covar_typhoid <- covar_typhoid %>% filter(IID %!in% missex)
 # Make new tables
 covar_typhoid$IID <- str_remove_all(covar_typhoid$IID, "_PATCH")
 pheno_typhoid <- covar_typhoid %>% select(IID, Diagnosed)
-keep_t <- inner_join(covar_typhoid, fam, by = "IID")
+keep_t <- inner_join(covar_typhoid, fam, by = "IID") %>%
+  select(V1, IID) %>%
+  rename(FID = V1) #254
 
-write.table(keep_t, file="keep_t.txt",col.names = F, row.names = F, quote = F, sep = '\t')
+write.table(keep_t, file="keep_t.txt", col.names = T, row.names = F, quote = F, sep = '\t')
 write.table(covar_typhoid, file="covar_typhoid.txt",col.names = T, row.names = F, quote = F, sep = '\t')
 write.table(pheno_typhoid, file="pheno_typhoid", col.names = F, row.names = F, quote = F, sep = '\t')
 
 #TODO paratyphoid files
 
 ```
-
-
-
-
-
-Extra notes -------------------------------------------------------------------------
-
-# Get current fam/IIDs of Missing samples
-id <- filter(missing, IID_2 %in% covar2$GENOTYPING_ID)
-id <- id 
-id <- id %>% rename(FID = V1)
-
-check <- left_join(check, id, by = "IID_2")
-# Rearrange table
-check <- check[,c(19,20,1:18)]
-
-# Missing samples pheno file
-check_pheno <- check %>% select(FID,IID,diagnosed)
-check_covar <- check[,c(2,4:20)]
-
-# Make keep file
-keep_t <- inner_join(covar_typhoid, fam, by = "IID")
-keep_t <- select(keep_t, V1, IID)
-
-
-
-# 71 + 259 = 330, we have 315 participants, extra are included
-# Amber had 103 + 96 = 209
-
-
-# add to covar_enteric
-check_covar$challenge <- as.integer(check_covar$challenge)
-check_covar$re_challenge <- as.integer(check_covar$re_challenge)
-covar_new <- bind_rows(covar_enteric, check_covar)
-# left_join with old pheno files somehow
-# Pheno updates
-pheno_enteric <- covar_enteric[,c(1,5)]
-pheno_typhoid <- covar_typhoid[,c(1,5)]
-pheno_para <- covar_para[,c(1,5)]
-
-# Recheck
-
-fam_miss_covar <- fam[(fam$IID %!in% covar_enteric$IID),]
-# Still missing 010, 047, 078, 087, 002
-# zeros removed from IDs 
-
-# Just need to rename covar file 
-extra <- c("010", "047", "078", "087", "002") #did in excel bc i am tired
-write.csv(covar, "covar.csv", row.names = F)
-covar <- fread("covar.txt")
-
-write.table(pheno_typhoid, "pheno_typhoid.txt", row.names = F, quote = F, sep = '\t')
-write.table(pheno_para, "pheno_para.txt", row.names = F, quote = F, sep = '\t')
-write.table(pheno_enteric, "pheno_enteric.txt", row.names = F, quote = F, sep = '\t')
-
-# Then remake files from covar
-# Make keep file
-keep_t <- inner_join(covar_typhoid, fam, by = "IID")
-keep_t <- select(keep_t, V1, IID)
-
-keep_p <- inner_join(covar_para, fam, by = "IID")
-miss <- anti_join(covar_para, fam, by = "IID") #some have patch IDs so need to get old ones
-keep_p <- select(keep_p, V1, IID)
-
-write.table(keep_t, file="keep_t.txt",col.names = F, row.names = F, quote = F, sep = '\t')
-write.table(keep_p, file="keep_p.txt",col.names = F, row.names = F, quote = F, sep = '\t')
-
-#files <- mget(ls())
-#for (i in 1:length(files)){
-#write.table(files[[i]], paste(names(files[i]), ".txt", sep = ""), row.names = F, quote = F, sep = '\t')}
-# move to ~/GWAS_22/gwas_final/meta
-
-covar$study <- as.factor(covar$study)
-table(covar$study)
-# Samples
-#P1 PATCH    T1    T2 TYGER  VAST 
-#50    36    38    80    40   102
-```
-#### Typhoid
-
-```{bash filter typhoid}
-plink2 --bfile merge_rn --keep keep_t.txt --make-bed --out typhoid
-plink2 --bfile merge_rn --keep keep_p.txt --make-bed --out paratyphoid
-```
-#### Paratyphoid
-
-#### All enteric
-
-
-### PCA
-
-```{r add in PCA to covar file}
-setwd("~/GWAS_22/gwas_final/meta")
-covar <- fread("covar_enteric.txt") # renamed extra <- c("010", "047", "078", "087", "002") 
-covar_typhoid <- fread("covar_typhoid.txt") # 259 
-keep_t <- fread("keep_t.txt") # 258
+```{r pca}
 fam <- fread("~/GWAS_22/gwas_final/merge/QC/typhoid.IBD.fam") # 251
 pca <- fread("~/GWAS_22/gwas_final/merge/QC/pca/typhoid.LD.eigenvec") # 251
 
-fam <- fam %>% rename(IID = V2)
-fam <- fam %>% rename(FID = V1)
-pca <- pca %>% rename(FID = '#FID')
-covar_pca <- left_join(pca, covar_typhoid, by = "IID")
-
-# Make chall_vax character
-covar_pca$chall_vax <- str_c(rep("_v",length(covar_pca$chall_vax)), covar_pca$chall_vax)
-write.table(covar_pca, file = "covar_pca.txt", quote = F, row.names = F)
-
-# Update pheno
-pheno <- filter(pheno, IID %in% fam$IID)
-
-
+test <- pca %>% filter(IID %in% covar_typhoid$IID) #245
+# remake typhoid files
+save.image(file = "id_covars.RData")
 ```
 
+
+```{bash filter-mergern}
+plink --bfile /home/mari/GWAS_22/gwas_final/merge/merge_rn \
+--keep /home/mari/GWAS_22/gwas_final/meta/keep_t.txt \
+--make-bed \
+--out /home/mari/GWAS_22/gwas_final/merge/typhoid/typhoid2
+```
