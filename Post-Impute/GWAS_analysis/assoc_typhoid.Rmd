@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/new_gwas/just_typhoid/assoc')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/assoc')
 
 library(data.table)
 library(ggplot2)
@@ -50,7 +50,7 @@ The null hypothesis is that there is no linear relationship. Therefore if;\
 The significance of this relationship is tested by calculating the T statistic:\
 \
 **t = b / SE** - **b** is the estimated value of linear slope or the coefficient of the predictor variable.\
- - **SE~*b*~** represents the standard error of the coefficient estimation which can be estimated using the following formula: \
+- **SE~*b*~** represents the standard error of the coefficient estimation which can be estimated using the following formula:\
 - **SE = S / √N** Where S represents the standard deviation and N represents the total number of data points
 
 If the p-value that corresponds to t is less than some threshold (e.g. α = .05); then we reject the null hypothesis and conclude that there is a statistically significant relationship between the predictor variable and the response variable
@@ -60,18 +60,23 @@ If the p-value that corresponds to t is less than some threshold (e.g. α = .05)
 -   General linear association model (GLM): Diagnosis
 -   Covariates to include: PCs, Sex, <https://www.cog-genomics.org/plink/2.0/assoc>
 
+```{r meta, Check covariates}
+
+```
+
 ```{bash GWAS Enteric fever}
 plink2 --bfile typhoid.IBD \
---pheno ~/GWAS_22/new_gwas/just_typhoid/meta/typhoid_pheno.txt \
---pheno-name Diagnosed \
---covar ~/GWAS_22/new_gwas/just_typhoid/meta/typhoid_covar.txt \
---covar-name Sex, chall_vax, Age, PC1, PC2, PC3, PC4, PC5 \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
+--pheno-name diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/covar_pca.txt \
+--covar-name sex, chall_vax, age, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
+--adjust \
 --out T_assoc
 ```
 
-New PCs lamda (check using --adjust flag) = 1, no genomic inflation :) 
+New PCs lamda (check using --adjust flag) = 1, no genomic inflation :)
 
 #### Interaction testing
 
@@ -97,7 +102,6 @@ plink2 --bfile typhoid.IBD \
 --out covar_checks/check
 
 ```
-
 
 ```{r Interaction test}
 
@@ -163,8 +167,6 @@ covar$chall_vax <- str_c(covar$Challenge, covar$Vaccine, sep = "_")
 covar$chall_vax <- as.factor(covar$chall_vax)
 ```
 
-
-
 ### Assoc Results
 
 ```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
@@ -196,7 +198,6 @@ write.table(tophits, file = "tophits_typhoid.txt", quote = F, row.names= F, sep 
 
 #### Manhattan Plots
 
-```{r}
 # Plot Manhattan
 manhattan(gwas, ylim = c(0, 8), cex = 0.6, cex.axis = 0.9, genomewideline = F, col = c("mediumseagreen", "darkolivegreen4"))
 
@@ -211,7 +212,6 @@ qq(gwas$P)
 
 # See plotting2.R for more data viz
 ```
-
 
 ```{bash}
 # Prep for annotation

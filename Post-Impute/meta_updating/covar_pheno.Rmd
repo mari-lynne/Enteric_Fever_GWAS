@@ -161,10 +161,10 @@ test <- pca %>% filter(IID %in% covar_typhoid$IID) #245
 save.image(file = "id_covars.RData")
 ```
 
-
 ```{bash filter-mergern}
 plink --bfile /home/mari/GWAS_22/gwas_final/merge/merge_rn \
 --keep /home/mari/GWAS_22/gwas_final/meta/keep_t.txt \
 --make-bed \
 --out /home/mari/GWAS_22/gwas_final/merge/typhoid/typhoid2
+# 253 participants
 ```
