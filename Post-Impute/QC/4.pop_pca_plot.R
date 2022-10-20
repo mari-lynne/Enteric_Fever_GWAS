@@ -243,9 +243,10 @@ ggsave("pve_study.png")
 covar <- fread("~/GWAS_22/gwas_final/meta/covar_typhoid.txt")
 pca_covar <- left_join(pca, covar, by = "IID") # matched 250
 pca_covar$Diagnosed <- as.factor(pca_covar$Diagnosed)
+pca_covar <- pca_covar[,c(1:20,28,29)]
 
 write.table(pca_covar,
-            file = "/home/mari/GWAS_22/new_gwas/just_typhoid/meta/typhoid_pcacovar.txt",
+            file = "~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt",
             quote = F,
             row.names = F,
             col.names = T,

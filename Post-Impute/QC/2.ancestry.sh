@@ -34,32 +34,32 @@ ref=all_hg38
 
 # Download reference data ------------------------------------------------------------
 
-# cd ${refdir}
+cd ${refdir}
 
-# pgen=https://www.dropbox.com/s/e5n8yr4n7y91fyp/all_hg38.pgen.zst?dl=1
-# pvar=https://www.dropbox.com/s/cy46f1c8yutd1h4/all_hg38.pvar.zst?dl=1
-# sample=https://www.dropbox.com/s/3j9zg103fi8cjfs/hg38_corrected.psam?dl=1
-# wget $pgen
-# mv 'all_hg38.pgen.zst?dl=1' all_hg38.pgen.zst
-# plink2 --zst-decompress all_hg38.pgen.zst > all_hg38.pgen
+pgen=https://www.dropbox.com/s/e5n8yr4n7y91fyp/all_hg38.pgen.zst?dl=1
+pvar=https://www.dropbox.com/s/cy46f1c8yutd1h4/all_hg38.pvar.zst?dl=1
+sample=https://www.dropbox.com/s/3j9zg103fi8cjfs/hg38_corrected.psam?dl=1
+wget $pgen
+mv 'all_hg38.pgen.zst?dl=1' all_hg38.pgen.zst
+plink2 --zst-decompress all_hg38.pgen.zst > all_hg38.pgen
 
-# wget $pvar
-# mv 'all_hg38.pvar.zst?dl=1' all_hg38.pvar.zst
-# wget $sample
-# mv 'hg38_corrected.psam?dl=1' all_hg38.psam
+wget $pvar
+mv 'all_hg38.pvar.zst?dl=1' all_hg38.pvar.zst
+wget $sample
+mv 'hg38_corrected.psam?dl=1' all_hg38.psam
 
-# # Convert ref genome to plink  bed
-# plink2 \
-# --pfile ${refdir}/${ref} vzs --max-alleles 2 \
-# --allow-extra-chr \
-# --autosome \
-# --make-bed \
-# --out ${refdir}/${ref}
+# Convert ref genome to plink  bed
+plink2 \
+--pfile ${refdir}/${ref} vzs --max-alleles 2 \
+--allow-extra-chr \
+--autosome \
+--make-bed \
+--out ${refdir}/${ref}
 
-# # Delete zst zip files
-# rm *.zst
+# Delete zst zip files
+rm *.zst
 
-# echo "1000G data download - DONE"
+echo "1000G data download - DONE"
 
 # 1) Tidy Study and Reference data ----------------------------------------------------
 
@@ -71,10 +71,10 @@ plink2 \
 --indep-pairwise 50 5 0.2 \
 --out ${qcdir}/${name}.LD
 
-# plink2 \
-# --bfile ${refdir}/${ref} \
-# --indep-pairwise 50 5 0.2 \
-# --out ${qcdir}/${ref}.LD
+plink2 \
+--bfile ${refdir}/${ref} \
+--indep-pairwise 50 5 0.2 \
+--out ${qcdir}/${ref}.LD
 
 # 1b) Prune Study and Ref Data ---------------------------------------------------------
 plink2 \
@@ -84,12 +84,12 @@ plink2 \
 --make-bed \
 --out ${qcdir}/${name}.LD
 
-# plink2 \
-# --bfile ${refdir}/${ref} \
-# --allow-extra-chr \
-# --extract ${qcdir}/${ref}.LD.prune.in \
-# --make-bed \
-# --out ${refdir}/${ref}.LD
+plink2 \
+--bfile ${refdir}/${ref} \
+--allow-extra-chr \
+--extract ${qcdir}/${ref}.LD.prune.in \
+--make-bed \
+--out ${refdir}/${ref}.LD
 
 # 2) Remove AC-GT SNPs ----------------------------------------------------------------
 
