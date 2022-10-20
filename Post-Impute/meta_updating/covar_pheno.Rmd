@@ -118,11 +118,10 @@ covar_enteric <- covar %>% filter(re_challenge == 1)  #317
 pheno <- fread("~/GWAS_22/new_gwas/meta/final_metadata/all_pheno_num.txt")
 pheno <-  filter(pheno, IID %in% covar$IID) # 342
 
-covar_typhoid <- left_join(covar_typhoid,pheno, by="IID")
+covar_typhoid <- left_join(covar_typhoidpheno, by="IID")
 covar_para <- left_join(covar_para,pheno, by="IID")
 covar_enteric <- left_join(covar_enteric,pheno, by="IID")
 ```
-
 
 ```{r Extra PATCH samples}
 # Check what fam IDs are in covar_typhoid
@@ -140,23 +139,57 @@ covar_typhoid <- covar_typhoid %>% filter(IID %!in% missex)
 
 # Make new tables
 covar_typhoid$IID <- str_remove_all(covar_typhoid$IID, "_PATCH")
-pheno_typhoid <- covar_typhoid %>% select(IID, Diagnosed)
-keep_t <- inner_join(covar_typhoid, fam, by = "IID") %>%
-  select(V1, IID) %>%
-  rename(FID = V1) #254
+
+load(file = "id_covars.RData")
+
+# Get FID back
+fam <-  fam %>% select(V1, IID) %>% rename(FID = V1) #254
+covar_typhoid <- inner_join(fam, covar_typhoid, by = "IID")
+# Filter duplicates
+covar_typhoid <- filter(covar_typhoid, stri_duplicated(IID)==FALSE) %>%
+  select(-ethnicity)
+
+# Recode vars (plink2 can use categorical)
+covar_typhoid$vaccine <- ifelse(covar_typhoid$vaccine == 0,"None",
+                            ifelse(covar_typhoid$vaccine == 1,"Ty21a",
+                                   ifelse(covar_typhoid$vaccine == 2, "M01ZH09",
+                                          ifelse(covar_typhoid$vaccine ==  3,"Vi-PS",
+                                                 ifelse(covar_typhoid$vaccine == 4,"Vi-TT",NA)))))
+
+
+#C, P = 3, T = 1, TN = 2
+covar_typhoid$challenge <- as.factor(covar_typhoid$challenge)
+levels(covar_typhoid$challenge) <- c("T", "TN")
+
+covar_typhoid$re_challenge  <- as.factor(covar_typhoid$re_challenge)
+levels(covar_typhoid$re_challenge) <- c("N", "PT")
+
+covar_typhoid$chall_vax <- str_c(covar_typhoid$challenge, covar_typhoid$vaccine, sep = "x")
+
+# Missing pheno data -----------------------------------------------------------
+missing_p <- filter(covar_typhoid, is.na(Diagnosed))
+p_data <- fread("pheno_fix.txt") #added zeros back in to IIDs where needed
+p_data <- filter(p_data, IID %in% missing_p$IID)
+rm(missing_p)
+
+covar_typhoid <- covar_typhoid %>% left_join(p_data, by= "IID") %>%
+  mutate(Diagnosed = coalesce(Diagnosed.x, Diagnosed.y))
+covar_typhoid <- select(covar_typhoid, -c(Diagnosed.x, Diagnosed.y, place_of_birth))
+
+# Make pheno and keep files ----------------------------------------------------
+pheno_typhoid <- covar_typhoid %>% select(FID, IID, Diagnosed)
+keep_t <- select(covar_typhoid, FID, IID)
 
 write.table(keep_t, file="keep_t.txt", col.names = T, row.names = F, quote = F, sep = '\t')
 write.table(covar_typhoid, file="covar_typhoid.txt",col.names = T, row.names = F, quote = F, sep = '\t')
-write.table(pheno_typhoid, file="pheno_typhoid", col.names = F, row.names = F, quote = F, sep = '\t')
+write.table(pheno_typhoid, file="pheno_typhoid.txt", col.names = T, row.names = F, quote = F, sep = '\t')
 
 #TODO paratyphoid files
-
 ```
 ```{r pca}
-fam <- fread("~/GWAS_22/gwas_final/merge/QC/typhoid.IBD.fam") # 251
-pca <- fread("~/GWAS_22/gwas_final/merge/QC/pca/typhoid.LD.eigenvec") # 251
-
-test <- pca %>% filter(IID %in% covar_typhoid$IID) #245
+fam <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam") # 251
+pca <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/pca/typhoid2.LD.eigenvec") # 251
+test <- pca %>% filter(IID %in% covar_typhoid$IID) #250
 # remake typhoid files
 save.image(file = "id_covars.RData")
 ```
