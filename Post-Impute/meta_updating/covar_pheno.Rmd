@@ -3,18 +3,20 @@ title: "Post-Impute"
 author: "Mari Johnson"
 date: "12/10/2022"
 output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
- Updates October:
- - Re-indexed and merged bcf files to get a more stringent R2
- - Making separate typhoid, para and merged plink files
-
+Updates October: - Re-indexed and merged bcf files to get a more
+stringent R2 - Making separate typhoid, para and merged plink files
 
 ```{r setup, include=FALSE, eval=TRUE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/meta')
 #Assoc folder switched to after merging
 ```
+
 ```{r Set up, eval=TRUE}
 library(data.table)
 library(stringr)
@@ -40,11 +42,9 @@ system("plink --bfile merged_data --update-ids update_ids.txt --make-bed --out m
 
 #### Update covar and pheno files
 
-**Key**
-Strain: C, P = 3, T = 1, TN = 2
-Sex M=1, F=2
-Re-challenge N=1, PP=2, PT=3, TP=4, TT=5
-Vaccine: NONE = 0, Ty21a = 1, M01ZH09= 2, Vi-PS = 3, Vi-TT= 4
+**Key** Strain: C, P = 3, T = 1, TN = 2 Sex M=1, F=2 Re-challenge N=1,
+PP=2, PT=3, TP=4, TT=5 Vaccine: NONE = 0, Ty21a = 1, M01ZH09= 2, Vi-PS =
+3, Vi-TT= 4
 
 ```{r typhoid}
 '%!in%' <- function(x,y)!('%in%'(x,y))
@@ -99,6 +99,7 @@ check$Chall_Vax <- str_c(covar$Challenge, covar$Vaccine, sep = "_")
 check <- clean_names(check)
 check <- rename(check, IID_2 = iid) # will match IID_2 in missing then tidy
 ```
+
 ```{r Rejoin and remake tables}
 # Rejoin -----------------------------------------------------------------------
 missing <- missing %>% select(IID, IID_2)
@@ -186,6 +187,7 @@ write.table(pheno_typhoid, file="pheno_typhoid.txt", col.names = T, row.names = 
 
 #TODO paratyphoid files
 ```
+
 ```{r pca}
 fam <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam") # 251
 pca <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/pca/typhoid2.LD.eigenvec") # 251

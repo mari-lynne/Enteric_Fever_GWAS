@@ -91,7 +91,7 @@ Ensembl coords +/- 10 KB
 Starting from FcGR2a Chromosome 1: 161,505,430
 To FcGR2b Chromosome 1: 161,678,654 
 
-```{bash GWAS Enteric fever}
+```{bash GWAS FCGR}
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --maf 0.1 \
 --chr 1 \
@@ -133,8 +133,134 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
  #TODO need to check LD patterns of surrounding genes in the locus along with gwas assoc data
  # I.e is there a more sig snp in a nearby LD gene that is responsible for the association
 ```
+### VAST antibody titre GWAS
+```{bash GWAS VAST}
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.1 \
+--pheno ~/GWAS_22/gwas_final/meta/vast_pheno.txt \
+--pheno-name adnob \
+--covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out vast
+```
 
-#### Interaction testing
+### Assoc Results
+
+```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
+# Typhoid Assoc -----------------------------------------------------------------
+gwas <- fread("vast.adnob.glm.linear")
+
+gwas <-
+  filter(gwas, TEST == "ADD") 
+
+# Rename cols - Logistic
+#colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
+#gwas <- select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT)) 
+
+# Rename cols - Linear
+colnames(gwas) <-
+  c("CHR","BP", "SNP","REF","ALT","A1",
+    "TEST","OBS_CT","BETA", "SE",
+    "T_STAT", "P","ERRCODE"
+  )
+
+gwas <- select(gwas, !c(ERRCODE, OBS_CT)) 
+
+write.table(gwas, file = "vast_adnob.txt", quote = F, row.names= F, sep = "\t")
+# delete og assoc output as very large
+
+#gwas <- fread("gwas_typhoid.txt")
+
+# Inspect top snps: ------------------------------------------------------------
+tophits <- filter(gwas, P < 1e-5)
+
+write.table(tophits, file = "tophits_vast_adnob_igg.txt", quote = F, row.names= F, sep = "\t")
+
+#### Manhattan Plots
+plot_dir <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/plots/")
+
+#qq_plot
+png(file = (paste(plot_dir,"adnob_qq.png", sep = "")), width = 5, height = 5, units = "in", res = 300)
+qq(gwas_data$p)
+dev.off()
+```
+
+#### Manhattan plot
+
+- Can add labels from annotation later
+
+```{r custom-manhattan-setup}
+gwas_data <- clean_names(gwas)
+rm(gwas)
+gwas_data <- filter(gwas_data, !is.na(gwas_data$p))
+
+# Reduce comp time by removing dense plots at the bottom which overlap
+sig_data <- gwas_data %>% 
+  subset(p < 0.01)
+nsig_data <- gwas_data %>% 
+  subset(p >= 0.01) %>%
+  group_by(chr) %>% 
+  sample_frac(0.1) # Remove 1/10th of the data
+gwas_data <- bind_rows(sig_data, nsig_data)
+
+# Calculate base pair coordinates -----------------------------
+data_cum <- gwas_data %>% 
+group_by(chr) %>% 
+  summarise(max_bp = max(bp)) %>% 
+  mutate(bp_add = lag(cumsum(as.numeric(max_bp)), default = 0)) %>% 
+  select(chr, bp_add)
+
+gwas_data <- gwas_data %>% 
+  inner_join(data_cum, by = "chr") %>% 
+  mutate(bp_cum = bp + bp_add)
+
+gwas_data <- gwas_data %>%
+select(-test,-bp_add)
+
+axis_set <- gwas_data %>% 
+  group_by(chr) %>% 
+  summarize(center = mean(bp_cum))
+
+ylim <- gwas_data %>% 
+  filter(p == min(p)) %>% 
+  mutate(ylim = abs(floor(log10(p))) + 2) %>% 
+  pull(ylim)
+sig <- 1e-5 # Top = 9.9e-5
+```
+```{r basic-manhattan}
+# Basic Plot ----------------------------------------------------
+
+png(file = (paste(plot_dir,"adnob_man.png", sep = "")), width = 9, height = 6, units = "in", res = 300)
+ggplot(gwas_data,
+       aes(
+         x = bp_cum,
+         y = -log10(p),
+         color = as_factor(chr),
+         size = -log10(p)
+       )) +
+  geom_hline(yintercept = -log10(sig),
+             color = "grey40",
+             linetype = "dashed") +
+  geom_point(alpha = 0.8, size = 1.3) +
+  scale_x_continuous(label = axis_set$chr, breaks = axis_set$center) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, ylim)) +
+  scale_color_manual(values = rep(c("#44c17b", "#287349"), 22)) +
+  scale_size_continuous(range = c(0.5, 3)) +
+  labs(x = "Chromsome",
+       y = "log(p)\n-") + theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+dev.off()
+```
+
+### Interaction testing
 
 Warning message: \--glm remaining control count is less than 10x predictor count for phenotype 'Diagnosed'\
 As I now have a much smaller sample size and more covariates I have 10 covariates which will be less than 1/10th of our n 153.
@@ -219,110 +345,5 @@ top %>%
 dev.off()
 
 ```
-
-### Assoc Results
-
-```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
-# Typhoid Assoc -----------------------------------------------------------------
-gwas <- fread("T_assoc.Diagnosed.glm.logistic.hybrid")
-
-gwas <-
-  filter(gwas, TEST == "ADD") 
-
-# Rename cols for qqman
-colnames(gwas) <-
-  c("CHR","BP", "SNP","REF","ALT","A1",
-    "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE",
-    "Z_STAT", "P","ERRCODE"
-  )
-
-gwas <- select(gwas, !c(`FIRTH?`,ERRCODE)) 
-write.table(gwas, file = "gwas_typhoid.txt", quote = F, row.names= F, sep = "\t")
-gwas <- fread("gwas_typhoid.txt")
-
-
-# Inspect top snps: ------------------------------------------------------------
-tophits <- filter(gwas, P < 1e-4) 
-write.table(tophits, file = "tophits_typhoid2.txt", quote = F, row.names= F, sep = "\t")
-
-#### Manhattan Plots
-plot_dir <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/plots/")
-
-#qq_plot
-qq(gwas$P)
-```
-
-#### Manhattan plot
-
-- Can add labels from annotation later
-
-```{r custom-manhattan-setup}
-gwas_data <- clean_names(gwas)
-rm(gwas)
-gwas_data <- filter(gwas_data, !is.na(gwas_data$p))
-
-# Reduce comp time by removing dense plots at the bottom which overlap
-sig_data <- gwas_data %>% 
-  subset(p < 0.01)
-nsig_data <- gwas_data %>% 
-  subset(p >= 0.01) %>%
-  group_by(chr) %>% 
-  sample_frac(0.1) # Remove 1/10th of the data
-gwas_data <- bind_rows(sig_data, nsig_data)
-
-# Calculate base pair coordinates -----------------------------
-data_cum <- gwas_data %>% 
-group_by(chr) %>% 
-  summarise(max_bp = max(bp)) %>% 
-  mutate(bp_add = lag(cumsum(as.numeric(max_bp)), default = 0)) %>% 
-  select(chr, bp_add)
-
-gwas_data <- gwas_data %>% 
-  inner_join(data_cum, by = "chr") %>% 
-  mutate(bp_cum = bp + bp_add)
-
-gwas_data <- gwas_data %>%
-select(-test,-obs_ct,-bp_add)
-
-axis_set <- gwas_data %>% 
-  group_by(chr) %>% 
-  summarize(center = mean(bp_cum))
-
-ylim <- gwas_data %>% 
-  filter(p == min(p)) %>% 
-  mutate(ylim = abs(floor(log10(p))) + 2) %>% 
-  pull(ylim)
-sig <- 1e-5 # Top = 9.9e-5
-```
-```{r basic-manhattan}
-# Basic Plot ----------------------------------------------------
-
-png(file = (paste(plot_dir,"typhoid_man.png", sep = "")), width = 9, height = 6, units = "in", res = 300)
-ggplot(gwas_data,
-       aes(
-         x = bp_cum,
-         y = -log10(p),
-         color = as_factor(chr),
-         size = -log10(p)
-       )) +
-  geom_hline(yintercept = -log10(sig),
-             color = "grey40",
-             linetype = "dashed") +
-  geom_point(alpha = 0.8, size = 1.3) +
-  scale_x_continuous(label = axis_set$chr, breaks = axis_set$center) +
-  scale_y_continuous(expand = c(0, 0), limits = c(0, ylim)) +
-  scale_color_manual(values = rep(c("#44c17b", "#287349"), 22)) +
-  scale_size_continuous(range = c(0.5, 3)) +
-  labs(x = "Chromsome",
-       y = "log(p)\n-") + theme_minimal() +
-  theme(
-    legend.position = "none",
-    panel.border = element_blank(),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank()
-  )
-dev.off()
-```
-
 
 
