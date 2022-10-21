@@ -1,9 +1,9 @@
 #Library 
 library(dplyr)
-library(data.table)
 library(tidyr)
 library(limma)
 library(stringr)
+library(data.table)
 library(ggplot2)
 library(forcats)
 library(factoextra)
@@ -16,14 +16,26 @@ library(Biobase)
 library(janitor)
 library(biomaRt)
 
+#load(file = "~/RNA/oct/meqtl_TD.RData")
+
 #Functions ####
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
-setwd("/home/mari/GWAS_22/gwas_final/eQTL") #where data is saved
-plot_dir <- c("/home/mari/GWAS_22/gwas_final/eQTL/plots") #where to save output plots
+# Directories and variables ---------------------------------------------------
+
+setwd("~/GWAS_22/gwas_final/eQTL")
+plot_dir <- c("~/GWAS_22/gwas_final/eQTL/plots") 
+time_point <- c("12h")
+study <- c("/T1T2_")
+out_dir <- getwd()
+
+id_data <- c("~/GWAS_22/gwas_final/meta/T1T2_ID_link.csv")
+plink <- c("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam") #fam file
+assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/tophits_typhoid2.txt")
+covar_data <- c("~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt")
 
 # Load micro-array experiment data
-load("~/RNA/T1_T2_with_rsn.norm.R")
+load("T1_T2_with_rsn.norm.R")
 data = T1_T2_autosomes
 rm(T1_T2_autosomes)
 
@@ -44,85 +56,85 @@ names(pData)[names(pData) == "timepoint3"] <- "visit"
 
 # Time point
 table(pData$visit)
-# Make new time point 0.5_1
-pData$visit <- pData$visit %>% fct_collapse(D0_1 = c("D0+12", "D1"))
 
-# Check T1 T2 IDs -------------------------------------------------------------
-
-# Fix sample ids, T2 samples exprs names dont match
-miss <- pData[sample_id %!in% colnames(exprs),]
-miss2 <- colnames(exprs[ ,colnames(exprs) %!in% pData$sample_id])
-miss$exprs_cols <- miss2
-miss <- dplyr::select(miss, part_number, sample_id, exprs_cols, study_arm, visit)
-
-# Add exprs colnames to pData for matching
-pData$exprs_cols <- colnames(exprs)
-
+pData$visit <- str_replace_all(pData$visit, "D0\\+12", "12h")
 
 # Filter DGE data for time point and genotyped samples ------------------------
+
+# Add exprs colnames to pData for matching tables by
+pData$exprs_cols <- colnames(exprs)
 
 # 1) Filter time point
 
 pData <-
   pData %>%
-  filter(visit == "TD")
+  filter(visit == time_point)
+
 exprs <-
   exprs[,colnames(exprs) %in% pData$exprs_cols]
 
 # 2) Filter for gwas samples
 
 # Match by intersecting participant ids
-IDlink <- clean_names(read.csv(file = "~/GWAS_22/gwas_final/meta/T1T2_ID_link.csv"))
+
+IDlink <- clean_names(read.csv(file = id_data))
 #Rename ID col so can join appropriately
 IDlink <- dplyr::rename(IDlink, part_number = participant_id)
 
+# Genotyping data in DGE data
 geno_ids <-
   IDlink %>%
-  filter(part_number %in% pData$part_number)
+  filter(part_number %in% pData$part_number) # Do missing samples have D1
 
+# Filter DGE data for appropriate genotyped samples
 pData <- 
   pData %>%
   filter(part_number %in% geno_ids$part_number)
-
 exprs <-
   exprs[,colnames(exprs) %in% pData$exprs_cols]
-# 50 observations  
+# 50 observations , 42 Day 0
 
 # Filter gwas data for dge/study samples --------------------------------------
 
 # write keep list
 keep <- geno_ids %>% dplyr::select(genotyping_id) %>% dplyr::rename(IID = genotyping_id)
-# add leading zeros
+
 # add in leading zero ids
 keep$IID <- str_pad(keep$IID, 3, pad = "0")
 
-fam <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam")
+fam <- fread(plink)
 fam <- fam %>% dplyr::rename(FID = V1,
                       IID = V2)
 # Get FIDs
 keep <- inner_join(keep, fam, by = "IID") %>% dplyr::select(FID, IID)
-write.table(keep, file = "~/GWAS_22/gwas_final/meta/T1T2_keep.txt", row.names = F, quote = F, col.names = T)
+
+write.table(keep,
+            file = paste0(out_dir,study,time_point,"_keep.txt"),
+            sep = "\t",
+            row.names = F,
+            quote = F,
+            col.names = T)
 
 
 # Filter for topsnps ----------------------------------------------------------
 
-top <- fread("~/GWAS_22/gwas_final/merge/typhoid/assoc/tophits_typhoid2.txt")
+top <- fread(assoc_data)
 
 snp.keep <- top$SNP
 
-write.table(snp.keep, file = "~/GWAS_22/gwas_final/eQTL/snp_keep.txt", sep = "\t", quote = F, col.names = F, row.names = F)
-
-system("plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD --keep ~/GWAS_22/gwas_final/meta/T1T2_keep.txt --extract ~/GWAS_22/gwas_final/eQTL/snp_keep.txt --make-bed --out ~/GWAS_22/gwas_final/eQTL/T1T2")
-
-save.image(file = "meqtl_TD.RData")
+write.table(snp.keep, file = paste0(out_dir,study,time_point,"_snp_keep.txt"),
+            sep = "\t",
+            quote = F,
+            col.names = F,
+            row.names = F)
 
 # Prep meQTL formats ----------------------------------------------------------
 
 # Prepare genotyping data/snp location data ------------------------------------
 
-system("source ~/GWAS_22/Enteric_GWAS/DEG-analysis/eQTL/2.geno_snp_prep.sh")
+# Run script in terminal as source ~/GWAS_22/Enteric_GWAS/DEG-analysis/eQTL/2.geno_snp_prep.sh
 
-# Gene loc table --------------------------------------------------------------
+# Gene location table --------------------------------------------------------------
 
 # Update array ids to gene names
 row.names(exprs) <- fData$ensembl_gene_id #from fData
@@ -142,11 +154,11 @@ table(filtered_genes$chromosome_name)
 filtered_genes <- filtered_genes[(filtered_genes$chromosome_name %in% c(1:22)),] 
 
 # Fill in NAs
-
 filtered_genes[filtered_genes == ""]<- NA
 filtered_genes <- na.omit(filtered_genes) %>% dplyr::select(-hgnc_symbol) #rewrite table
 
-write.table(filtered_genes, file = "~/GWAS_22/gwas_final/eQTL/T1T2_gene_loc.txt", sep = "\t", quote = F, col.names = T, row.names = F)
+write.table(filtered_genes, file = paste0(out_dir,study,time_point,"_gene_loc.txt"),
+            sep = "\t", quote = F, col.names = T, row.names = F)
 
 # Expression table ------------------------------------------------------------
 
@@ -154,16 +166,17 @@ write.table(filtered_genes, file = "~/GWAS_22/gwas_final/eQTL/T1T2_gene_loc.txt"
 pData <- left_join(pData, geno_ids, by = "part_number")
 
 colnames(exprs) <- pData$genotyping_id
-#TODO fix zeros
+# add in leading zero ids
+colnames(exprs) <- str_pad(colnames(exprs), 3, pad = "0")
 
-write.table(exprs, file = "~/GWAS_22/gwas_final/eQTL/T1T2_exprs.txt", sep = "\t", quote = F, col.names = T, row.names = T)
+write.table(exprs, file = paste0(out_dir,study,time_point,"_exprs.txt"),
+            sep = "\t", quote = F, col.names = T, row.names = T)
 
 # Covar table -----------------------------------------------------------------
 
-load(file = "~/RNA/oct/meqtl_TD.RData")
-
 covar <- fread("~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt")
-covar <- select(covar, IID, sex, age, chall_vax)
+
+covar <- dplyr::select(covar, IID, sex, age, chall_vax)
 # filter for study participants
 covar <- covar %>% filter(IID %in% keep$IID)
 
@@ -178,31 +191,34 @@ covar$chall_vax <- ifelse(covar$chall_vax == "TxNone",0,
 covar <-  t(covar)
 colnames(covar) <- covar[1, ]
 covar <- covar[-1, ]
-write.table(covar, file = "~/GWAS_22/gwas_final/eQTL/T1T2_covar_eqtl.txt", sep = "\t", quote = F, col.names = T, row.names = T)
+
+
+write.table(covar, file = paste0(out_dir,study,time_point,"_covar.txt"),
+            sep = "\t", quote = F, col.names = T, row.names = T)
 
 
 # Check orders -----------------------------------------------------------------
-geno <- fread("T1T2_geno_file.txt")
-covar <- fread("T1T2_covar_eqtl.txt",header = T)
-exprs <- fread("T1T2_exprs.txt")
+geno <- fread(paste0(out_dir,study,time_point,"_geno.txt"))
+covar <- fread(paste0(out_dir,study,time_point,"_covar.txt"))
+exprs <- fread(paste0(out_dir,study,time_point,"_exprs.txt"))
 
-
-# Clean geno names
-# geno needs iid names
+# Clean geno iid names
 colnames(geno) <- str_sub(colnames(geno), start= -3)
 geno <- geno %>% rename(V1 = SNP)
 
-# add in leading zero ids
-colnames(exprs) <- str_pad(colnames(exprs), 3, pad = "0")
-exprs <- exprs %>% rename(V1 = "0V1")
-
 # Order other tables by geno
 names.use <- names(geno)
-exprs <- exprs[, ..names.use]
 covar <- covar[, ..names.use]
+exprs <- exprs[, ..names.use]
 
-write.table(geno, file = "T1T2_geno_file.txt", sep = "\t", quote = F, col.names = T, row.names = F)
-write.table(covar, file = "T1T2_covar_eqtl.txt", sep = "\t", quote = F, col.names = T, row.names = F)
-write.table(exprs, file = "T1T2_exprs.txt", sep = "\t", quote = F, col.names = T, row.names = F)
+# Final tables 
+write.table(geno, file = paste0(out_dir,study,time_point,"_geno.txt"),
+            sep = "\t", quote = F, col.names = T, row.names = F)
+
+write.table(covar, file = paste0(out_dir,study,time_point,"_covar.txt"),
+            sep = "\t", quote = F, col.names = T, row.names = F)
+
+write.table(exprs, file = paste0(out_dir,study,time_point,"_exprs.txt"),
+            sep = "\t", quote = F, col.names = T, row.names = F)
 
 
