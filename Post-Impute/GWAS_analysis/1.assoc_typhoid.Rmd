@@ -82,8 +82,57 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --adjust \
 --out T_assoc
 ```
-
 New PCs lamda (check using --adjust flag) = 1, no genomic inflation :)
+
+
+### FcR association testing
+
+Ensembl coords +/- 10 KB
+Starting from FcGR2a Chromosome 1: 161,505,430
+To FcGR2b Chromosome 1: 161,678,654 
+
+```{bash GWAS Enteric fever}
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.1 \
+--chr 1 \
+--from-bp 161505430 \
+--to-bp 161688654 \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out fcgr_assoc
+
+ #TODO need to check LD patterns of surrounding genes in the locus along with gwas assoc data
+ # I.e is there a more sig snp in a nearby LD gene that is responsible for the association
+```
+
+### FcaR association testing
+
+Ensembl coords GRCh38.p13:
+19: 54,874,235-54,891,420
+
+```{bash GWAS Enteric fever}
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.1 \
+--chr 19 \
+--from-bp 54864235 \
+--to-bp 54901420 \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out fcar_assoc
+
+ #TODO need to check LD patterns of surrounding genes in the locus along with gwas assoc data
+ # I.e is there a more sig snp in a nearby LD gene that is responsible for the association
+```
 
 #### Interaction testing
 
@@ -98,8 +147,7 @@ Remove least significant covars.
 -   covar standardise necessary, but does pass VIF test (=2)
 
 ```{bash GWAS Covar checking}
-mkdir covar_checks 
-plink2 --bfile typhoid2.IBD \
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
 --pheno-name Diagnosed \
 --covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
@@ -122,20 +170,20 @@ interact <- interact %>%
 
 interact$TEST <- as.factor(interact$TEST)
 levels(interact$TEST)
-
 VIF_high <- filter(interact, ERRCODE == "VIF_TOO_HIGH")
-table(VIF_high$TEST)
+table(VIF_high$TEST) # 998,140 SNPs have error codes 
 
-VIF_ADD <- filter(interact, TEST == "ADD")
+VIF_ADD <- filter(interact, str_detect(TEST, "ADD")==TRUE)
+levels(VIF_ADD$TEST)
 
 # 1947595 - VIF too high, are these for low sig snps?
 # Filter for top SNPS? Then look at interaction factor sig
 # Combine vaccine and challenge into one factor
 
 # Just vaccine 
-vax <- interact[(interact$TEST == "Vaccine"),]
+vax <- interact[(interact$TEST == "chall_vax"),]
 vax %>%
-  group_by(ID) %>%
+  group_by(SNP) %>%
   ggplot(aes(
     x = TEST,
     y = -log10(P),
@@ -153,23 +201,23 @@ snps <- geno$SNP
 top <- filter(ADD, SNP %in% snps)
 
 # glm is fitting a model per snp, therefore get an overview of covars
-tiff(file = "interaction_snps.tiff",
+tiff(file = "interaction-snps.tiff",
      res = 720,
      width = 7500, height = 5000,
      compression = "lzw")
-top %>% group_by(SNP) %>%
+top %>%
+  group_by(SNP) %>%
   ggplot(aes(
     x = TEST,
     y = -log10(P),
     fill = TEST
-  )) + geom_boxplot() +
-  theme_bw() + labs(x = "\nCovariate", title = "Interaction Tests") + theme(legend.position = "none")
+  )) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(x = "\nCovariate", title = "Interaction Tests") +
+  theme(legend.position = "none")
 dev.off()
 
-
-# Make new factor - updated in pca_plot script too
-covar$chall_vax <- str_c(covar$Challenge, covar$Vaccine, sep = "_")
-covar$chall_vax <- as.factor(covar$chall_vax)
 ```
 
 ### Assoc Results
@@ -194,8 +242,8 @@ gwas <- fread("gwas_typhoid.txt")
 
 
 # Inspect top snps: ------------------------------------------------------------
-tophits <- filter(gwas, P < 9.9e-5) 
-write.table(tophits, file = "tophits_typhoid.txt", quote = F, row.names= F, sep = "\t")
+tophits <- filter(gwas, P < 1e-4) 
+write.table(tophits, file = "tophits_typhoid2.txt", quote = F, row.names= F, sep = "\t")
 
 #### Manhattan Plots
 plot_dir <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/plots/")
