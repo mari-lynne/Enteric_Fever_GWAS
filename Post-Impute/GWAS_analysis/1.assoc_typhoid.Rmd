@@ -8,8 +8,9 @@ output: html_document
 ```{r setup, include=FALSE}
 
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/typhoid/assoc')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/enteric/assoc')
 
+library(dplyr)
 library(data.table)
 library(ggplot2)
 library(ggpubr)
@@ -68,9 +69,26 @@ If the p-value that corresponds to t is less than some threshold (e.g. α = .05)
 
 -   General linear association model (GLM): Diagnosis
 -   Covariates to include: PCs, Sex, <https://www.cog-genomics.org/plink/2.0/assoc>
-- MAF 0.1, SNPs have to be in at least 10% of the data i.e 25 participants
+-   MAF 0.1, SNPs have to be in at least 10% of the data i.e 25 participants
+
+#### Enteric Fever
 
 ```{bash GWAS Enteric fever}
+plink2 --bfile ~/GWAS_22/gwas_final/merge/enteric/QC/enteric.IBD \
+--maf 0.1 \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_enteric.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/enteric_pcacovar.txt \
+--covar-name age, sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out enteric
+```
+
+#### Typhoid fever
+
+```{bash GWAS Typhoid fever}
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --maf 0.1 \
 --pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
@@ -82,14 +100,12 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --adjust \
 --out T_assoc
 ```
+
 New PCs lamda (check using --adjust flag) = 1, no genomic inflation :)
 
+#### FcR association testing
 
-### FcR association testing
-
-Ensembl coords +/- 10 KB
-Starting from FcGR2a Chromosome 1: 161,505,430
-To FcGR2b Chromosome 1: 161,678,654 
+Ensembl coords +/- 10 KB Starting from FcGR2a Chromosome 1: 161,505,430 To FcGR2b Chromosome 1: 161,678,654
 
 ```{bash GWAS FCGR}
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
@@ -110,12 +126,11 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
  # I.e is there a more sig snp in a nearby LD gene that is responsible for the association
 ```
 
-### FcaR association testing
+#### FcaR association testing
 
-Ensembl coords GRCh38.p13:
-19: 54,874,235-54,891,420
+Ensembl coords GRCh38.p13: 19: 54,874,235-54,891,420
 
-```{bash GWAS Enteric fever}
+```{bash Fcar}
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --maf 0.1 \
 --chr 19 \
@@ -133,32 +148,112 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
  #TODO need to check LD patterns of surrounding genes in the locus along with gwas assoc data
  # I.e is there a more sig snp in a nearby LD gene that is responsible for the association
 ```
-### VAST antibody titre GWAS
-```{bash GWAS VAST}
-plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+
+#### VAST antibody titre and function GWAS
+
+```{bash VAST-GWAS}
+
+# Update pheno and file names as required
+cd ~/GWAS_22/gwas_final/merge/typhoid/vast
+plink2 --bfile vast \
 --maf 0.1 \
---pheno ~/GWAS_22/gwas_final/meta/vast_pheno.txt \
---pheno-name adnob \
+--pheno pheno_vast.txt \
+--pheno-name enteric \
+--covar covar_vast.txt \
+--covar-name sex, age, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out vast2
+```
+Q: are snps in the FcGR region affecting vaccine responses FcR
+
+```{bash VAST-FcGR}
+# Update pheno and file names as required
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.15 \
+--chr 1 \
+--from-bp 161505430 \
+--to-bp 161688654 \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_vast.txt \
+--pheno-name Diagnosed \
 --covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
 --covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
 --adjust \
---out vast
+--out vast/vast.fcgr
+```
+```{bash VAST-FcaR}
+# Update pheno and file names as required
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.15 \
+--chr 19 \
+--from-bp 54864235 \
+--to-bp 54901420 \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_vast.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out vast/vast.fcar
+
+# vast_pheno.txt for all ab vars, pheno_vast.tx for diagnosis TODO:fix these later
+
 ```
 
-### Assoc Results
+#### Previous GWAS SNPs
 
-```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
+TLR4:
+9: 117,693,175-117,734,735 
+Not significant P = 0.1
+
+VAC14
+16: 70,677,439-70,811,160
+most sig is 0.000210881, (2e-4), not genome wide
+
+PARK2,
+CHR 6 161337417-162737775
+P = 0.0152076
+
+CFTR,
+Chromosome 7: 117277120-117725971 
+P = 0.0236181
+
+CAPN,
+Chromosome 2: 31,163,056-31,243,858
+NS, P = 0.08
+
+
+```{bash TLR}
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.1 \
+--chr 2 \
+--from-bp 161337417 \
+--to-bp 162737775  \
+--pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out park2
+```
+
+### Candiate gene association: Results
+
+**CGAS**
+
+```{r CGAS Results, eval = TRUE, cache=TRUE}
 # Typhoid Assoc -----------------------------------------------------------------
-gwas <- fread("vast.adnob.glm.linear")
+
+gwas <- fread("vast.fcgr.enteric.glm.linear")
 
 gwas <-
   filter(gwas, TEST == "ADD") 
-
-# Rename cols - Logistic
-#colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
-#gwas <- select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT)) 
 
 # Rename cols - Linear
 colnames(gwas) <-
@@ -169,32 +264,74 @@ colnames(gwas) <-
 
 gwas <- select(gwas, !c(ERRCODE, OBS_CT)) 
 
-write.table(gwas, file = "vast_adnob.txt", quote = F, row.names= F, sep = "\t")
-# delete og assoc output as very large
+# Inspect top snps: ------------------------------------------------------------
+tophits <- filter(gwas, P < 0.05)
 
-#gwas <- fread("gwas_typhoid.txt")
+write.table(tophits, file = "tophits_fcgr_enteric.txt", quote = F, row.names= F, sep = "\t")
+
+write.table(gwas, file = "vast_fcgr_enteric.txt", quote = F, row.names= F, sep = "\t")
+# delete og assoc output as very large
+```
+
+Summary: VAST enteric/ADNOB
+
+- ADNOB, sig FCGR snps, 3 FcAR (just)
+- enteric, no sig FcAR snps, lots of sig fcar snps
+- Diagnosis
+
+Summary: FcRs challenge
+
+- FcGR snps assoc with 
+
+
+### Genome-wide association: Results
+
+**GWAS**
+
+```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
+# Typhoid Assoc -----------------------------------------------------------------
+
+gwas <- fread("enteric.Diagnosed.glm.logistic.hybrid")
+
+gwas <-
+  filter(gwas, TEST == "ADD") 
+
+# Rename cols - Logistic
+colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
+gwas <- select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT)) 
+
+# # Rename cols - Linear
+# colnames(gwas) <-
+#   c("CHR","BP", "SNP","REF","ALT","A1",
+#     "TEST","OBS_CT","BETA", "SE",
+#     "T_STAT", "P","ERRCODE"
+#   )
+# gwas <- select(gwas, !c(ERRCODE, OBS_CT)) 
 
 # Inspect top snps: ------------------------------------------------------------
 tophits <- filter(gwas, P < 1e-5)
 
-write.table(tophits, file = "tophits_vast_adnob_igg.txt", quote = F, row.names= F, sep = "\t")
+write.table(tophits, file = "tophits_enteric.txt", quote = F, row.names= F, sep = "\t")
 
-#### Manhattan Plots
-plot_dir <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/plots/")
+write.table(gwas, file = "gwas_enteric.txt", quote = F, row.names= F, sep = "\t")
+# delete og assoc output as very large
 
-#qq_plot
-png(file = (paste(plot_dir,"adnob_qq.png", sep = "")), width = 5, height = 5, units = "in", res = 300)
-qq(gwas_data$p)
+# QQ plot
+plot_dir <- c("~/GWAS_22/gwas_final/merge/enteric/assoc/plots/")
+png(file = (paste(plot_dir,"enteric_qq.png", sep = "")), width = 7, height = 7, units = "in", res = 300)
+qq(gwas$P)
 dev.off()
 ```
 
 #### Manhattan plot
 
-- Can add labels from annotation later
+-   Can add labels from annotation later
 
 ```{r custom-manhattan-setup}
+gwas <- fread("gwas_enteric.txt")
+
 gwas_data <- clean_names(gwas)
-rm(gwas)
+
 gwas_data <- filter(gwas_data, !is.na(gwas_data$p))
 
 # Reduce comp time by removing dense plots at the bottom which overlap
@@ -214,8 +351,7 @@ group_by(chr) %>%
   select(chr, bp_add)
 
 gwas_data <- gwas_data %>% 
-  inner_join(data_cum, by = "chr") %>% 
-  mutate(bp_cum = bp + bp_add)
+  inner_join(data_cum, by = "chr") %>% mutate(bp_cum = bp + bp_add)
 
 gwas_data <- gwas_data %>%
 select(-test,-bp_add)
@@ -230,10 +366,11 @@ ylim <- gwas_data %>%
   pull(ylim)
 sig <- 1e-5 # Top = 9.9e-5
 ```
+
 ```{r basic-manhattan}
 # Basic Plot ----------------------------------------------------
-
-png(file = (paste(plot_dir,"adnob_man.png", sep = "")), width = 9, height = 6, units = "in", res = 300)
+plot_dir <- c("~/GWAS_22/gwas_final/merge/enteric/assoc/plots/")
+png(file = (paste(plot_dir,"enteric-man.png", sep = "")), width = 9, height = 6, units = "in", res = 300)
 ggplot(gwas_data,
        aes(
          x = bp_cum,
@@ -247,7 +384,7 @@ ggplot(gwas_data,
   geom_point(alpha = 0.8, size = 1.3) +
   scale_x_continuous(label = axis_set$chr, breaks = axis_set$center) +
   scale_y_continuous(expand = c(0, 0), limits = c(0, ylim)) +
-  scale_color_manual(values = rep(c("#44c17b", "#287349"), 22)) +
+  scale_color_manual(values = rep(c("#3d8e7f", "#93d5b2"), 22)) +
   scale_size_continuous(range = c(0.5, 3)) +
   labs(x = "Chromsome",
        y = "log(p)\n-") + theme_minimal() +
@@ -345,5 +482,3 @@ top %>%
 dev.off()
 
 ```
-
-
