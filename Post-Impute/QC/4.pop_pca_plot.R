@@ -7,7 +7,10 @@
 
 # Load data --------------------------------------------------------------------
 
-setwd("/home/mari/GWAS_22/gwas_final/merge/typhoid/QC/pca")
+setwd("/home/mari/GWAS_22/gwas_final/merge/enteric/QC/pca")
+
+# Typhoid: typhoid2
+# Enteric: enteric.IBD
 
 # Load packages
 
@@ -218,8 +221,8 @@ ggsave("pve_ancestry.png")
 # PCA - Just study data  -------------------------------------------------------
 
 # Load data
-pca <- fread("typhoid2.LD.eigenvec")
-eigenval <- fread("typhoid2.LD.eigenval")
+pca <- fread("enteric.LD.eigenvec")
+eigenval <- fread("enteric.LD.eigenval")
 
 # Basic PCA
 ggplot(data = pca, aes(PC1, PC2)) + geom_point()
@@ -240,13 +243,13 @@ ggsave("pve_study.png")
 # Use these PCs in GLM model
 
 # PCA by outcome  -------------------------------------------------------
-covar <- fread("~/GWAS_22/gwas_final/meta/covar_typhoid.txt")
-pca_covar <- left_join(pca, covar, by = "IID") # matched 250
+covar <- fread("~/GWAS_22/gwas_final/meta/covar_enteric.txt")
+pca_covar <- left_join(pca, covar, by = "IID") # matched 250, 301
 pca_covar$Diagnosed <- as.factor(pca_covar$Diagnosed)
-pca_covar <- pca_covar[,c(1:20,28,29)]
+pca_covar <- pca_covar[,c(1:18,26:27)]
 
 write.table(pca_covar,
-            file = "~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt",
+            file = "~/GWAS_22/gwas_final/meta/enteric_pcacovar.txt",
             quote = F,
             row.names = F,
             col.names = T,
@@ -358,10 +361,10 @@ i <- pca_covar %>%
 (a|d) + 
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = "a", title = "PCA of imputed gwas data") 
-ggsave("PCtyphoid-12-45.png")
+ggsave("PCenteric-12-45.png")
 
 
-pdf("all-typhoid-PCAs.pdf")
+pdf("all-enteric-PCAs.pdf")
 a
 b
 c

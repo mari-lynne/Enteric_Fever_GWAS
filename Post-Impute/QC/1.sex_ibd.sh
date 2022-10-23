@@ -1,36 +1,42 @@
 #!/bin/bash
 
-# IBD script checking
+# Remove missex/missing data samples
+# Calcualte IBD
+# Remove cryptic related samples
+
 # source ~/GWAS_22/Enteric_GWAS/Post-Impute/QC/1.sex_ibd.sh
 set -ux
 
 # Variables and Directories ---------------------------------------------------------
 
-dir=~/GWAS_22/gwas_final/merge/typhoid
-data=typhoid2
+dir=~/GWAS_22/gwas_final/merge
+plink_data=merge_rn
+data=enteric
 
 cd ${dir}
-mkdir QC
-qcdir=${dir}/QC
+#mkdir QC
+qcdir=${dir}/enteric/QC
 mkdir log
-log=${dir}/log
+log=${qcdir}/log
 
 cd ${qcdir}
 
-# Filter failed sex check samples ---------------------------------------------------
+# Filter samples ---------------------------------------------------
 
-# plink2 \
-# --bfile ${dir}/${data} \
-# --remove ${dir}/fail_sex.txt \
-# --make-bed \
-# --out ${dir}/${data}
+# Miss-sex and missing data samples filtered in pheno_covar.R #fail_sex.txt
+
+plink2 \
+--bfile ${dir}/${plink_data} \
+--keep ${dir}/keep_ent.txt \
+--make-bed \
+--out ${qcdir}/${data}
 
 # Calculate IBD in Plink ------------------------------------------------------------
 
 plink \
---bfile ${dir}/${data} \
+--bfile ${data} \
 --genome \
---out ${qcdir}/${data}
+--out ${data}
 
 echo "IBD genome - Done"
 
@@ -43,9 +49,12 @@ echo "Outlier list - Done"
 
 # Filter IBD outliers in PLINK -------------------------------------------------------
 plink2 \
---bfile ${dir}/${data} \
+--bfile ${data} \
 --remove ${data}.outliers.txt \
 --make-bed \
---out ${qcdir}/${data}.IBD
+--out ${data}.IBD
 
 echo "Related Samples Removed"
+
+mv *.log ${log}
+rm -f *.nosex

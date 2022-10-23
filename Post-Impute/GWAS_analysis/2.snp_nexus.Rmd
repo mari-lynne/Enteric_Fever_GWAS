@@ -7,7 +7,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = TRUE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/typhoid/assoc')
+knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus/adnob')
 ```
 
 ### Aims
@@ -20,11 +20,18 @@ knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/typhoid/assoc')
 ##### Load Packages:
 
 ```{r Packages}
-library(data.table)
-library(tidylog)
 library(dplyr)
+library(data.table)
+library(ggplot2)
+library(ggrepel)
+library(tidylog)
 library(stringr)
+library(stringi)
 library(openxlsx)
+library(RColorBrewer)
+library(forcats)
+library(qqman)
+library(janitor)
 ```
 
 #### Write nexus snp list
@@ -32,7 +39,7 @@ library(openxlsx)
 Upload data to SNP nexus to get genome annotation <https://www.snp-nexus.org/v4/>
 
 ```{r format Nexus snp list}
-tophits <- fread("tophits_typhoid.txt")
+tophits <- fread("tophits/tophits_adnob_age.txt")
 nexus <- select(tophits, CHR, BP, REF, ALT)
 nexus <- mutate(nexus, strand = rep(1, length(nexus$CHR)))
 nexus <- mutate(nexus, Type = rep("Chromosome", length(nexus$CHR)))
@@ -41,26 +48,25 @@ nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand)
 names(nexus) <-
   c("Type", "Id", "Position", "Alelle1", "Allele2", "Strand")
 
-write.table(nexus, "typhoid_nexus.txt", row.names = F, col.names = F, quote = F, sep = " ")
+write.table(nexus, "adnob2_nexus.txt", row.names = F, col.names = F, quote = F, sep = " ")
 #Then need to find what these snps are in LD with
 ```
 
-#### Read nexus .txt files into R
+Read nexus .txt files from assoc directory into R
 
 #### Format Annotation Data
 
-```{r get-nexusdata}
+```{r get-nexusdata, message=FALSE}
 # Read in data
-temp = list.files(pattern = "*uk.txt")
+temp = list.files(pattern = ".txt")
 myfiles = lapply(temp, fread) #read all files in temp
 trim <- str_extract(temp, ".{4,}?")
 names(myfiles) <- trim
 
 #Unlist files and save to global environment
 list2env((myfiles), envir = .GlobalEnv)
-tophits <- fread("tophits_typhoid.txt")
+tophits <- toph
 ```
-
 ```{r Format Annotation data ID, message=TRUE}
 #ID file -----------------------------------------------------------------------
 
@@ -93,7 +99,7 @@ main <- full_join(ID, ense, by = "Variation ID")
 
 
 #Regulatory Elements -----------------------------------------------------------
-road <- fread("roadmap_mari.johnson@lmh.ox.ac.uk.txt")
+#road <- fread("roadmap_mari.johnson@lmh.ox.ac.uk.txt")
 road$Epigenome <- as.factor(road$Epigenome)
 #levels(road$Epigenome)
 # Contains many tissue eQTLs
@@ -124,7 +130,7 @@ gwas <- gwas %>%
 ```{r Join tables, message=TRUE}
 # Join tables ------------------------------------------------------------------
 
-tophits <- select(tophits, -c(TEST,OBS_CT))
+tophits <- select(tophits, -c(TEST))
 
 # Format SNP - VAR ID for joining
 # chr1:25346917:G:A > chr1:111418204:G/A:1
@@ -171,17 +177,16 @@ write.csv(main, file = "GWAS_summary.data.csv", row.names = F)
 #### Labelled Manhattan Plots
 
 ```{r Labelled-manhattan}
-gwas_data <- clean_names(fread("gwas_typhoid.txt"))
-gwas_data <- filter(gwas_data, !is.na(gwas_data$p))
-main <- read.csv(file = "GWAS_summary.data.csv")
+gwas_data <- clean_names(fread("vast_gwas.txt"))
+#main <- read.csv(file = "GWAS_summary.data.csv")
 
 # Reduce comp time by removing dense plots at the bottom which overlap
 sig_data <- gwas_data %>% 
-  subset(p < 0.01)
+  subset(p <= 0.01)
 nsig_data <- gwas_data %>% 
   subset(p >= 0.01) %>%
   group_by(chr) %>% 
-  sample_frac(0.1) # Remove 1/10th of the data
+  sample_frac(0.1) # Keep 8% of nsig data
 gwas_data <- bind_rows(sig_data, nsig_data)
 
 # Calculate base pair coordinates -----------------------------
@@ -196,7 +201,7 @@ gwas_data <- gwas_data %>%
   mutate(bp_cum = bp + bp_add)
 
 gwas_data <- gwas_data %>%
-select(-test,-obs_ct,-bp_add)
+select(-test,-bp_add)
 
 axis_set <- gwas_data %>% 
   group_by(chr) %>% 
@@ -209,20 +214,21 @@ ylim <- gwas_data %>%
 sig <- 1e-5 # Top = 9.9e-5
 ```
 ```{r highlight genes}
-# Highlight genes --------------------------------------------
-# Load data 
-public <- read.xlsx(xlsxFile = "typhoid_gwas.xlsx", sheet = "public_gwas")
+# Highlight genes --------------------------------------------------------------
 
+# Leave public hits for now, didn't seem v relevant
+#public <- read.xlsx(xlsxFile = "typhoid_gwas.xlsx", sheet = "public_gwas")
 #eqtl <- load(file = "~/RSV/data/transcriptomics/eQTL/eqtl_results.RData")
+
 # Just remove dups for now
 main <- main[(stri_duplicated(main$variation_id)==FALSE),]
 
 # Update var_id format 
 main$snp <- str_replace_all(main$variation_id, "\\/", "\\:") 
-public$snp <- str_replace_all(public$variation_id, "\\/", "\\:") 
-public$snp <- str_remove_all(public$snp, "(\\:1)$")
+#public$snp <- str_replace_all(public$variation_id, "\\/", "\\:") 
+#public$snp <- str_remove_all(public$snp, "(\\:1)$")
 
-# variation_ids to highlight -------------------------------------------------------------
+# variation_ids to highlight ---------------------------------------------------
 # filter so grouped by gene and then take the min val
 
 DT <- data.table(main)
@@ -230,14 +236,15 @@ top <- DT[, .SD[which.min(p)], by = overlapped_gene]
 top <- top %>% filter(overlapped_gene != "None")
 top <- top %>% filter(overlapped_gene != "none")
 top_snps <- top$snp
-public_snps <- public$snp
+
+#public_snps <- public$snp
 #cis_snps <- cis$snps
 #trans_snps <- trans$snps
 
 # Add highlight and annotation information
 gwas_data <- gwas_data %>%
-  mutate(highlight_top = ifelse(snp %in% top_snps, "yes", "no")) %>%
-  mutate(highlight_pub = ifelse(snp %in% public_snps, "yes", "no"))
+  mutate(highlight_top = ifelse(snp %in% top_snps, "yes", "no"))
+  # mutate(highlight_pub = ifelse(snp %in% public_snps, "yes", "no"))
   # mutate(highlight_cis = ifelse(snp %in% cis_snps, "yes", "no")) %>%
   # mutate(highlight_trans = ifelse(snp %in% trans_snps, "yes", "no"))
 
@@ -245,8 +252,8 @@ gwas_data <- gwas_data %>%
 gene <- select(main, snp, overlapped_gene)
 gwas_data <- left_join(gwas_data, gene, by = "snp")
 
-gwas_data <- left_join(gwas_data, public, by = "snp") %>% select(-variation_id)
-gwas_data <- gwas_data %>% select(!ends_with(".y"))
+#gwas_data <- left_join(gwas_data, public, by = "snp") %>% select(-variation_id)
+#gwas_data <- gwas_data %>% select(!ends_with(".y"))
 names(gwas_data) <- str_replace_all(names(gwas_data),".x","")
 #TODO turn name cleaning after join into a function
 
@@ -260,7 +267,7 @@ names(gwas_data) <- str_replace_all(names(gwas_data),".x","")
 # Plot with labelled eqtl genes ------------------------------------------------
 plot_dir <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/plots/")
 
-png(file = (paste(plot_dir,"top-genes-man.png", sep = "")), width = 10, height = 6, units = "in", res = 300)
+png(file = (paste(plot_dir,"top-genes-adnob-man.png", sep = "")), width = 10, height = 6, units = "in", res = 300)
 ggplot(gwas_data,
        aes(
          x = bp_cum,
@@ -268,36 +275,47 @@ ggplot(gwas_data,
          color = as_factor(chr),
          size = -log10(p)
        )) +
-  geom_hline(yintercept = -log10(1e-4),
+  geom_hline(yintercept = -log10(1e-5),
              color = "grey34",
              linetype = "dashed") +
-  geom_hline(yintercept = -log10(1e-5),
+  geom_hline(yintercept = -log10(1e-8),
              color = "grey80",
              linetype = "dashed") +
   geom_point(alpha = 0.8, size = 1.3) +
   scale_x_continuous(label = axis_set$chr, breaks = axis_set$center) +
-  scale_y_continuous(expand = c(0, 0), limits = c(0, ylim)) +
-  scale_color_manual(values = rep(c("#44c17b", "#287349"), 22)) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 8.5)) +
+  scale_color_manual(values = rep(c("#3d8e7f", "#93d5b2"), 22)) +
   scale_size_continuous(range = c(0.5, 3)) +
   geom_label_repel(
     data = subset(gwas_data, highlight_top == "yes"),
     aes(label = overlapped_gene),
-    size = 2.5, color = "#D28423", nudge_y = 0.5, nudge_x = 0.1
+    size = 2.5, color = "#202936", nudge_y = 0.5, nudge_x = 0.1
   ) +
-  geom_label_repel(
-    data = subset(gwas_data, highlight_pub == "yes"),
-    aes(label = trait),
-    size = 2.5, color = "#AD3A8A", nudge_y = -0.3, nudge_x = 2) +
-  labs(x = "Chromsome",
-       y = "-log10(p)") +
     theme_minimal() +
   theme(
     legend.position = "none",
     panel.border = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank()
-  )
+  ) +
+  labs(x = "Chromsome", title = "Genetic associations of Vi-ADNOB responses following typhoid vaccination")
 dev.off()
 
+save.image(file = "adnob.RData")
+
+# Colour palette
+# #fcf2c2 light colour, #e06252 light red, #202936 dark blue, #D28423 og pale yellow/orange
+# +
+#   geom_label_repel(
+#     data = subset(gwas_data, highlight_pub == "yes"),
+#     aes(label = trait),
+#     size = 2.5, color = "#AD3A8A", nudge_y = -0.3, nudge_x = 2) +
+#   labs(x = "Chromsome",
+#        y = "-log10(p)") 
+
 ```
+
+#### GWAS combined tophits
+
+- check for common genes/variants
 
