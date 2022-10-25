@@ -167,6 +167,7 @@ pData <- left_join(pData, geno_ids, by = "part_number")
 
 colnames(exprs) <- pData$genotyping_id
 # add in leading zero ids
+# TODO remove geno_id cols
 colnames(exprs) <- str_pad(colnames(exprs), 3, pad = "0")
 
 write.table(exprs, file = paste0(out_dir,study,time_point,"_exprs.txt"),

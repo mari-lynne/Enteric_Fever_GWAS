@@ -316,10 +316,10 @@ plot_vol <- function(deg,
 
 ```{r Set up Data, include = FALSE}
 load(
-  "/home/mari/RNA/Daniel/Filter2_VAST_STAR_HTSeq_gene_meta_autosomes_mismatch_corrected_demo_minus_rRNA_globins_autosomes_2021-04-27.R"
+  "/home/mari/RNA/Filter2_VAST_STAR_HTSeq_gene_meta_autosomes_mismatch_corrected_demo_minus_rRNA_globins_autosomes_2021-04-27.R"
 )
 data <- VAST_autosomes #RNAseq data set
-#rm(VAST_autosomes)
+rm(VAST_autosomes)
 
 #Clean names using janitor package
 str(data$samples)
@@ -351,6 +351,9 @@ genes <- data$genes[(data$meta_data$study_arm != "CTRL"), ]
 counts <- data$counts[rownames(data$counts) %in% rownames(genes),
                       colnames(data$counts) %in% meta_data$row_names]
 #filter rows (genes in counts, by the colnames (genes) in genes)
+
+
+
 #reform s3 DGElist object
 data <- DGEList(counts = counts,
                 genes = genes,

@@ -10,19 +10,19 @@ plink_dir=${dir}/QC
 
 #~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus/adnob
 # data renamed to data
-data=diagnosis
-study=vast_
-outdir=${dir}/assoc/vast/${data} 
+data=0.5
+study=vast_tyg_
+outdir=~/GWAS_22/gwas_final/eQTL
 # same as outdir in Rscript :: EQTL = ~/GWAS_22/gwas_final/eQTL
  # Or adnob/antibody measure
 
 cd ${outdir}
 # Make snp keep file from gwas data (not needed for eqtl)
-cut -f3 tophits_${data}.txt > ${study}${data}_snp_keep.txt
+# cut -f3 tophits_${data}.txt > ${study}${data}_snp_keep.txt
 
 # Filter plink data for study individuals, and snps for eqtl analysis
 plink2 --bfile ${plink_dir}/${plink_data} \
---keep ${plink_dir}/${study}keep.txt \
+--keep ${study}${data}_keep.txt \
 --extract ${study}${data}_snp_keep.txt \
 --make-bed \
 --out ${study}${data}
