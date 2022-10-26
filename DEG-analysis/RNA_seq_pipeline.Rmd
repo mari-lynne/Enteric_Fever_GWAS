@@ -7,7 +7,7 @@ output: html_document
 
 ```{r Rmd setup}
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, error = TRUE)
-knitr::opts_knit$set(root.dir = '/home/mari/RNA') #Permanently sets wd for Rmd
+knitr::opts_knit$set(root.dir = '/home/mari/RNA/oct') #Permanently sets wd for Rmd
 ```
 
 ### Aims:
@@ -731,7 +731,7 @@ fit <-
 
 ```{r Save / load limma voom data}
 #save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
-load(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
+load(file = "~/RNA/diff_expr_results/VAST_RNAseq.RData")
 #save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq_chall.RData")
 
 ```
@@ -762,6 +762,20 @@ groups <- colnames(design[, grep("time0v", colnames(design))])
 cm <- results$contrasts
 fit2 <- results$fit2
 toptables <- results$top_results
+
+# Saved in gwas_final/eqtl
+V7_vs_V0 <- toptables$V7_vs_V0
+D0_vs_V0 <- toptables$D0_vs_V0
+V1_vs_V0 <- toptables$V1_vs_V0
+write.csv(V7_vs_V0, file = "V7_V0_top.csv", row.names = F)
+write.csv(D0_vs_V0, file = "V7_V0_top.csv", row.names = F)
+write.csv(V1_vs_V0, file = "V7_V0_top.csv", row.names = F)
+
+exprs_t <- as.data.frame(t(lcpm))
+pheno_exprs <- bind_cols(pData, exprs_t)
+pheno_exprs <- pheno_exprs[,-c(1:5)]
+write.csv(pheno_exprs, file = "vast_lcpm.csv", row.names = T)
+
 
 plotSA(fit2) #check variance post-voom
 ```
@@ -842,7 +856,7 @@ fc
 
 *Todo* check labels in plot_vol function code
 
-### Results:
+#### Results:
 
 ### Mixed Vax comparison
 

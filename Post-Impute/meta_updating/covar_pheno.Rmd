@@ -266,6 +266,10 @@ load(file = "id_covars.RData")
 ```{bash filter-mergern}
 plink --bfile /home/mari/GWAS_22/gwas_final/merge/merge_rn \
 --keep /home/mari/GWAS_22/gwas_final/meta/keep_t.txt \
+```
+
+
+```{bash filter-mergern}
 --make-bed \
 --out /home/mari/GWAS_22/gwas_final/merge/typhoid/typhoid2
 # 253 participants
@@ -280,7 +284,7 @@ setwd("~/GWAS_22/gwas_final/merge/typhoid/vast")
 fam2 <- fread("vast.fam")
 pca2 <- fread("vast.LD.eigenvec")
 
-fam2 <- fam2 %>% rename(FID = V1, IID = V2) %>% select(FID, IID)
+fam2 <- fam2 %>% dplyr::rename(FID = V1, IID = V2) %>% dplyr::select(FID, IID)
 
 vast_covar <- fam2 %>% left_join(covar_typhoid, by = c("FID","IID")) %>% left_join(pca2, by = c("FID","IID"))
 
@@ -294,3 +298,69 @@ vast_pheno <- left_join(vast_pheno, pheno, by = c("FID","IID"))
 write.table(vast_covar, file="covar_vast.txt",row.names = F, quote = F, sep = '\t')
 write.table(vast_pheno, file="pheno_vast.txt", row.names = F, quote = F, sep = '\t')
 ```
+
+#### Update vast vax pheno
+
+```{r vast pheno checking}
+
+check <- clean_names(fread("enteric_meta_Feb22.csv"))
+check <- filter(check, !is.na(genotyping_id))
+
+pheno_exprs <- read.csv(file = "~/RNA/oct/combat_vast_tyger.csv")
+pheno <- pheno_exprs[, !str_detect(colnames(pheno_exprs), "ENSG")]
+pheno <- filter(pheno, time_point == "Baseline")
+
+check2 <- left_join(pheno, check, by = c("lab_id", "participant_id"))
+check2 <- dplyr::select(check2, participant_id, genotyping_id, lab_id, meta_id, diagnosis, outcome, study, study_arm, vaccine, strain_or_dose, age_years, sex, ancestry)
+# check 2 has pheno data from rnaseq, and old covar data
+# check 3, add in current covar data
+
+# VAST ####
+vast_check <- filter(check2, study == "VAST")
+IDlink <- clean_names(read.csv(file = "geno_ids.csv"))
+#Rename ID col so can join appropriately
+IDlink <- dplyr::rename(IDlink, lab_id = lab_id)
+vast_check <- left_join(vast_check, IDlink, by = c("genotyping_id", "lab_id",  "participant_id", "meta_id"))
+
+# Vaccine mismatches in covar file
+covar_typhoid2 <- dplyr::rename(covar_typhoid, cat_iid = IID)
+
+vast_check <- inner_join(covar_typhoid2, vast_check, by = "cat_iid")
+
+# recode vaccine.x (my covar info to match seq info)
+vax <- vast_check %>% mutate(vaccine.x = ifelse(vaccine.x == "None", "Control", vaccine.x),
+                      vaccine.x = ifelse(vaccine.x == "Vi-TT", "Vi-TCV", vaccine.x))
+
+miss <- vax[vax$vaccine.x != vax$vaccine.y, ] # 16 :(
+
+# Get cols to update covar_typhoid with 
+miss <- miss[, c(1:7,27,9:18)]
+# tidy_colnames and vars
+names(miss) <- str_remove_all(colnames(miss), "\\.\\w")
+miss <- miss %>% mutate(vaccine = ifelse(vaccine == "Control", "None", vaccine),
+                      vaccine = ifelse(vaccine == "Vi-TCV", "Vi-TT", vaccine))
+
+miss$chall_vax <- str_c(miss$challenge, miss$vaccine, sep = "x")
+
+miss <- rename(miss, IID = cat_iid)
+
+
+covar_typhoid <- filter(covar_typhoid, IID %!in% miss$IID)
+covar_typhoid <- bind_rows(miss, covar_typhoid)
+write.table(covar_typhoid, file="covar_typhoid.txt", row.names = F, quote = F, sep = '\t')
+
+# Add pca
+pca <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/pca/typhoid2.LD.eigenvec") # 251
+covar_pca <- left_join(covar_typhoid, pca, by = "IID")#250
+write.table(covar_pca, file="typhoid_pcacovar.txt", row.names = F, quote = F, sep = '\t')
+
+save.image(file = "id_covars.RData")
+
+# Tyger ####
+# Tyger all matches up
+# check against current covar
+# covar_typhoid2 <- dplyr::select(covar_typhoid, FID, IID, study, age, sex, challenge, vaccine, chall_vax)
+# covar_typhoid2 <- dplyr::rename(covar_typhoid2, genotyping_id = IID)
+# check3 <- inner_join(check2, covar_typhoid, by = "genotyping_id") 
+```
+

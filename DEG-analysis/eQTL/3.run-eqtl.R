@@ -7,10 +7,10 @@ library(MatrixEQTL)
 # Set up file names and outputs ------------------------------------------------
 
 setwd("~/GWAS_22/gwas_final/eQTL")
-time_point <- c("0.5")
-study <- c("/vast_tyg_")
+time_point <- c("D1")
+study <- c("/T1T2_")
 
-assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/tophits_typhoid2.txt")
+assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/typhoid_tophits.txt")
 out_dir = getwd()
 SNP_file_name = paste0(out_dir, study, time_point, "_geno.txt");
 snps_location_file_name = paste0(out_dir, study, time_point, "_snp_loc.txt");
@@ -107,34 +107,21 @@ cat('Analysis done in: ', me$time.in.sec, ' seconds', '\n');
 
 trans <- (me$trans$eqtls)
 cis <- (me$cis$eqtls)
+
+bonferroni <- (0.05/me$trans$ntests)
+
 #trans <- filter(trans, FDR <=0.05)
 #cis <- filter(cis, FDR <=0.05)
 
-## Merge gene data ####
+## Merge gwas data ------------------------------------------------------------
 
-ensembl = useEnsembl(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
-genes <-
-  getBM(
-    attributes = c(
-      'ensembl_gene_id',
-      'hgnc_symbol',
-      'chromosome_name',
-      'start_position',
-      'end_position'
-    ),
-    mart = ensembl
-  )
-
-genes <-
-  genes %>%
-  rename(gene = ensembl_gene_id)
+trans$eqtl <- rep("trans", nrow(trans))
+cis$eqtl <- rep("cis", nrow(cis))
 
 eqtls <-
-  bind_rows(cis, trans) %>%
-  left_join(genes, by = "gene")
+  bind_rows(cis, trans) 
 
 ## Merge assoc data ####
-
 assoc <- fread(assoc_data)
 
 eqtls <-
