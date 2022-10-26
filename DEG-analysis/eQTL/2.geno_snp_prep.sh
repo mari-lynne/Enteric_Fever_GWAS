@@ -10,13 +10,17 @@ plink_dir=${dir}/QC
 
 #~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus/adnob
 # data renamed to data
-data=0.5
+data=TD
 study=vast_tyg_
 outdir=~/GWAS_22/gwas_final/eQTL
+
 # same as outdir in Rscript :: EQTL = ~/GWAS_22/gwas_final/eQTL
  # Or adnob/antibody measure
-
 cd ${outdir}
+
+mkdir log
+log=${outdir}/log
+
 # Make snp keep file from gwas data (not needed for eqtl)
 # cut -f3 tophits_${data}.txt > ${study}${data}_snp_keep.txt
 
@@ -45,4 +49,4 @@ cat ${study}${data}.traw | cut -f2,7- > ${study}${data}_geno.txt
 awk '{print $2, $1, $4}' ${study}${data}.traw > ${study}${data}_snp_loc.txt
 
 rm *.nosex
-mv *log log
+mv *log ${log}

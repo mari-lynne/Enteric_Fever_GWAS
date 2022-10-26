@@ -1,6 +1,6 @@
 # Set up
 
-setwd("~/RNA")
+setwd("~/RNA/oct")
 plot_dir <- c("~/RNA/oct/plots") 
 
 #load packages #
@@ -28,6 +28,8 @@ library(patchwork)
 # Merge using combat
 
 # Pre-process -----------------------------------------------------------------
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
 
 ## VAST ------------------------------------------------------------------------
 
@@ -138,251 +140,100 @@ table(samples$sequence_pool)
 table(samples$study_arm)
 table(samples$time_point3)
 
-# Harmonise time points
+# Filter contaminated
+# should filter for contaminated samples if I'm going to just use the uncontaminated 
+samples <- filter(samples, contaminated_sample == "No")
+
+# Clean diagnosis var
+table(samples$diagnosis)
+
+no_chall <- filter(samples, diagnosis == "UNKNOWN - Not Challenged")
+samples <- filter(samples, diagnosis != "UNKNOWN - Not Challenged")
+
+# Clean diagnosis var
+table(samples$diagnosis)
+samples <- samples %>%
+  mutate(diagnosis = ifelse(diagnosis == "1", "TD", diagnosis),
+         diagnosis = ifelse(diagnosis == "0", "nTD", diagnosis))
+
+# Update counts 
+counts <- counts[ , colnames(counts) %in%  rownames(samples)]
+
+# Make new batch sequence pool var
+samples$batch_pool <- str_c(samples$batch, samples$sequence_pool, sep = "_")
+table(samples$batch_pool)
+
+# Harmonise time points -------------------------------------------------------
 
 # recode time_point3
 # D0.12h <- D0+12
 # D0 <- D00
+table(samples$time_point)
 
 samples <- samples %>%
   mutate(time_point3 = ifelse(time_point3 == "D0+12h", "D0.12h", time_point3)) %>%
   mutate(time_point3 = ifelse(time_point3 == "D00", "D0", time_point3))
 
+# Make day of challenge V28 for vaccine samples day 0
 samples <- samples %>%
-  mutate(time_point = ifelse(time_point3 == "V0" & (study_arm == "ViPS" | study_arm == "ViTCV") , "Baseline", time_point3)) %>%
-  mutate(time_point = ifelse(time_point3 == "D0" & (study_arm == "CTRL" | study_arm == "TN"), "Baseline", time_point))
+  mutate(time_point = ifelse(time_point3 == "D0" & (study_arm %in% c("ViTCV", "ViPS")), "V28", time_point3))
 
-table(samples$time_point)
-# merge Day 7 TD time point where poss, as TD have a separate time point
-# make a separate diagnoisis time var maybe, time points from 8 days plus are TD
-# TD 14 is just TN and control samples
 
-# TD_D7plus
-table(samples$time_point)
-# merge TD24/12hs into one timepoint as combat doesnt like single obvs
-# D08,10,12 Join
-
+# Make new baseline time point, V0 for vaccinees and D0 for challenge
 samples <- samples %>%
-mutate(time_point = ifelse(time == "7", "D7", time_point)) %>%
-  mutate(time_point = ifelse(time_point3 == "TD.12h", "TD.24h", time_point))  %>%
-  mutate(time_point = ifelse(time_point3 %in% c("D08", "D10","D12"), "D08_12",time_point))
+  mutate(time_point = ifelse(time_point %in% c("V0","D0"), "Baseline", time_point)) 
+# filter vaccine timepoints and D01-14 which are study specific
+samples <- filter(samples, time_point %in% c("Baseline", "D0.12h", "TD"))
 
-# Clean diagnosis var
-samples <- samples %>%
-  mutate(diagnosis = ifelse(diagnosis == "1", "TD", "nTD"))
+tab <- table(samples$time_point, samples$batch, samples$diagnosis)
+addmargins(tab)
 
-# Make new batch sequence pool var
-samples <- samples %>%
-  mutate(batch = ifelse(seq_run == "original", "1","2"))
-samples$batch_pool <- str_c(samples$batch, samples$sequence_pool, sep = "_")
-table(samples$batch_pool)
-
-# should filter for contaminated samples if I'm going to just use the uncontaminated 
-samples <- filter(samples, contaminated_sample == "No")
 counts <- counts[ , colnames(counts) %in%  rownames(samples)]
 
 
-# Batch correction -------------------------------------------------------------
 
-combat <- sva::ComBat_seq(counts=counts,
-                          batch=samples$batch_pool,
-                          group=samples$time_point)
+# Batch correction -------------------------------------------------------------
 
 # covar_mod	
 # Model matrix for multiple covariates to include in linear model (signals from these variables are kept in data after adjustment
 # Can't be confounded with batch tho, therfore need to rework batch or leave out 
 
-covar <- samples %>% dplyr::select(study_arm)
+samples$arm_time <- str_c(samples$study_arm, samples$time_point, sep = "_")
+
+covar <- samples %>% dplyr::select(arm_time)
+table(samples$batch, samples$study_arm)
+
+combat <- sva::ComBat_seq(counts=counts,
+                          batch=samples$batch,
+                          group=samples$time_point)
+
+
+# It's worse with seq_pool in as unbalanced
+# 
+
+
 ## PCA -------------------------------------------------------------------------
 # Show that control samples look similar, batch independent
 # Show that we can still se biological variation eg. TD vs nTD at D7
 
-# 1) Make df with counts and vars joined for easy data subestting
-count_t <- t(counts)
-data <- bind_cols(samples, count_t)
-
-comb_t <- t(combat)
-data2 <- bind_cols(samples, comb_t)
-
-# 2a) PCA of uncorrected seq data
-
-table(data$time_point)
-pca <- filter(data, time_point == "D7")
-pca_1 <- prcomp(pca[,-c(1:20)], scale. = TRUE)
-
-# 3a) Plots
-fviz_eig(pca_1)
-
-a <- autoplot(pca_1, data = pca,
-         colour = "study_arm", shape="batch",
-         frame = TRUE, frame.type = 'norm') +
-  theme_bw() + ggtitle("Raw Data")
-a
-
-# 2b) PCA batch corrected data
-pca <- filter(data2, time_point3 == "TD")
-pca_2 <- prcomp(pca[,-c(1:20)], scale. = TRUE)
-
-# 3b) Plots
-fviz_eig(pca_2)
-b <- autoplot(pca_2, data = pca,
-         colour = "study_arm", shape="batch",
-         frame = TRUE, frame.type = 'norm') +
-  theme_bw() + ggtitle("Batch Corrected")
-b
-
-ggsave(filename = paste(plot_dir, "TD_PCA.png"))
-(a + b) + plot_layout(guides = "collect") + plot_annotation(title = "TD")
+# see batch_pcas.R
 
 
-# Batch 1 = TyGER original
-# Batch 2 = TyGER resequenced
-# Batch 3 = VAST
+### Save data ----------------------------------------------------------------
+save.image(file = "VAST_Tyger_oct.RData")
+load(file = "VAST_Tyger_oct.RData")
 
-# Vaccine differences
-vast_pc <- filter(data, batch == "3" & time_point3 == "TD")
-pca <- prcomp(vast_pc[,-c(1:19)], scale. = TRUE)
-a <- autoplot(pca, data = vast_pc,
-         colour = "study_arm", shape="batch_pool",
-         frame = TRUE, frame.type = 'norm') +
-  theme_bw() + ggtitle("Raw Data")
-a
-
-table(vast$samples$time_point3)
-
-#"batch_pool", shape="study_arm"
-#"study_arm", shape="batch_pool"
-
-
-vast_pc <- filter(data2, batch == "3" & time_point3 == "TD")
- pca <- prcomp(vast_pc[,-c(1:19)], scale. = TRUE)
-b <- autoplot(pca, data = vast_pc,
-         colour = "study_arm", shape="batch_pool",
-         frame = TRUE, frame.type = 'norm') +
-  theme_bw() + ggtitle("Batch Corrected")
-b
-
-(a + b) + plot_layout(guides = "collect") + plot_annotation(title = "VAST TD")
-
+pheno_exprs <- bind_cols(samples, comb_t)
 
 write.csv(pheno_exprs, file = "combat_vast_tyger.csv")
 
+# So far batches look better (although not fully corrected), biological affects not changed when comparing within a batch
 
 
 
-?autoplot
+## Extra ------------------------------------------------------------------------
 
-
-# Extra -------------------------------------------------------------------
-
-#Convert counts to log to minimise the effect of small values and negatives
-cpm <- cpm(data)
-lcpm <- cpm(data, log=TRUE) #Used for exploratory plots/checks
-L <- mean(data$samples$lib.size) * 1e-6 #average library size
-M <- median(data$samples$lib.size) * 1e-6
-c(L, M)
-
-#Filter low exprs genes
-keep.exprs <- filterByExpr(data)
-# Warning - all samples appear to belong to the same group
-data <- data[keep.exprs, keep.lib.sizes=FALSE] 
-
-#TMM normalisation already performed
-# <- calcNormFactors(data, method = "TMM")
-tyger <- data
-vast <- data
-rm(data)
-rm(cpm)
-rm(lcpm)
-
-save.image(file = "TyGER_oct.RData")
-
-
-## Filter out contaminated samples, and time_point -----------------------------
-# Add exprs colnames to samples for matching tables by
-
-data <- tyger
-samples <- data$samples
-counts <- data$counts
-genes <- data$genes
-
-samples$exprs_cols <- colnames(counts)
-
-table(data$samples$time_point3)
-samples$visit <- str_replace_all(samples$time_point3, "D0.12h", "12h")
-table(samples$visit)
-
-time_point <- c("12h")
-v2 <- c("contaminated_sample")
-
-# 1) Filter time point and contaminated
-samples <-
-  samples %>%
-  filter(visit == time_point & contaminated_sample != v2)
-
-# 1b) Filter time - vast
-samples <-
-  samples %>%
-  filter(visit == time_point)
-
-counts <-
-  counts[,colnames(counts) %in% samples$exprs_cols]
-dim(counts)
-
-
-#reform s3 DGElist object
-tyger_12h <-DGEList(counts = counts,
-                    genes = genes,
-                    samples = samples)
-
-vast_12h <- DGEList(counts = counts,
-                    genes = genes,
-                    samples = samples)
-
-rm("data","samples", "counts", "keep.exprs", "genes")
-
-save.image(file = "VAST_TYGER.RData")
-load(file = "VAST_TYGER.RData")
-
-table(vast$samples$time_point3)
-table(tyger$samples$time_point3)
-
-library(ganalyse)
-test <- as.eset(tyger_12h)
-test2 <- as.eset(vast_12h)
-
-merged <- merge(test1, test2, method = "combat")
-
-## Keep only common genes ------------------------------------------------------
-common <- intersect(tyger_12h$genes$gene_id, vast_12h$genes$gene_id)
-length(common)
-
-vast_12h$genes <- vast_12h$genes %>% filter(gene_id %in% common)
-vast_12h$counts <- vast_12h$counts[row.names(vast_12h$counts) %in% common,]
-dim(vast_12h$counts)
-
-tyger_12h$genes <- tyger_12h$genes %>% filter(gene_id %in% common)
-tyger_12h$counts <- tyger_12h$counts[row.names(tyger_12h$counts) %in% common,]
-
-dim(tyger_12h$samples)
-
-tyger_12h$samples$batch <- rep("tyger",nrow(tyger_12h$samples))
-vast_12h$samples$batch <- rep("vast",nrow(vast_12h$samples))
-
-# order genes
-names.use <- vast_12h$genes$gene_id
-tyger_12h$genes <- tyger_12h$genes[names.use,]
-# order counts
-tyger_12h$counts <-t yger_12h$counts[names.use,]
-
-# Common sample data
-common <- intersect(names(tyger_12h$samples), names(vast_12h$samples))
-
-View(data$samples)
-
-test <- cbind
-
-## Tyger checking ---------------------------------------------------------------
+### Tyger checking ---------------------------------------------------------------
 samples <- data$samples
 genes <- data$genes
 metadata <- data$metadata
