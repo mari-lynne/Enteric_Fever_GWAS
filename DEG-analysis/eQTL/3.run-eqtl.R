@@ -7,8 +7,8 @@ library(MatrixEQTL)
 # Set up file names and outputs ------------------------------------------------
 
 setwd("~/GWAS_22/gwas_final/eQTL")
-time_point <- c("D1")
-study <- c("/T1T2_")
+time_point <- c("D0.12h")
+study <- c("/vast_")
 
 assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/typhoid_tophits.txt")
 out_dir = getwd()

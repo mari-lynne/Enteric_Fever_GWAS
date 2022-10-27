@@ -19,35 +19,30 @@ library(Biobase)
 library(janitor)
 library(biomaRt)
 
-
 # Directories and variables ---------------------------------------------------
-
 setwd("~/GWAS_22/gwas_final/eQTL")
 plot_dir <- c("~/GWAS_22/gwas_final/eQTL/plots") 
-time_point <- c("D0.12h")
 study <- c("/vast_")
-out_dir <- getwd()
+
+time_point <- c("V0")
+deg_data <- c("D0_V0.csv")
+assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/tophits_fcgr.txt")
+var <- c("fcr")
+cgas <- c("FCGR")
 
 id_data <- c("~/GWAS_22/gwas_final/meta/geno_ids.csv")
 plink <- c("~/GWAS_22/gwas_final/merge/typhoid/vast/vast.fam") #fam file
-assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/vast/iga_tophits.txt")
 covar_data <- c("~/GWAS_22/gwas_final/meta/covar_vast.txt")
-# typhoid2.IBD, typhoid_pcacovar
-
-pheno_exprs <- read.csv(file = "~/RNA/oct/combat_vast_tyger.csv")
-pheno <- pheno_exprs[, !str_detect(colnames(pheno_exprs), "ENSG")]
-
+pheno_exprs <- read.csv(file = "vast_lcpm.csv")
+out_dir <- getwd()
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
 # Filter for time point and genotyped samples ----------------------------------
-
-# Add exprs colnames to pheno_exprs for matching tables by
-
 # 1) Filter time point
 pheno_exprs <-
   pheno_exprs %>%
-  filter(time_point == "D0.12h", study_arm %in% c("ViTCV", "ViPS"))
-
+  filter(time_point3 == "V0", study_arm %in% c("ViTCV", "ViPS"))
+table(pheno_exprs$time_point3)
 
 # 2) Filter for gwas samples ---------------------------------------------------
 
@@ -61,7 +56,6 @@ IDlink <- dplyr::rename(IDlink, lab_id = lab_id)
 geno_ids <-
   IDlink %>%
   filter(lab_id %in% pheno_exprs$lab_id) # Do missing samples have D1
-
 
 # Filter DGE data for appropriate genotyped samples
 pheno_exprs <- 
@@ -106,24 +100,29 @@ write.table(snp.keep, file = paste0(out_dir,study,time_point,"_snp_keep.txt"),
             col.names = F,
             row.names = F)
 
-# Prep meQTL formats ----------------------------------------------------------
-
-# Prepare genotyping data/snp location data ------------------------------------
-# Update vars in geno_prep script and run as
-# Run script in terminal as
-#source ~/GWAS_22/Enteric_GWAS/DEG-analysis/eQTL/2.geno_snp_prep.sh
-
 # Expression table ------------------------------------------------------------
 
 # Update Sample IDs to match geno IDs
-
 pheno_exprs <- left_join(pheno_exprs, geno_ids, by = "lab_id")
+
 pheno_exprs <- pheno_exprs[pheno_exprs$cat_iid %in% keep$IID,]
+
 exprs <- pheno_exprs[, str_detect(colnames(pheno_exprs), "ENSG")]
 exprs <- t(exprs)
+
 colnames(exprs) <- pheno_exprs$cat_iid
 
-# Gene location table --------------------------------------------------------------
+
+# Filter for DEG genes
+# deg <- clean_names(read.csv(file = deg_data))
+# deg <- deg %>% dplyr::filter(p_value <= 0.05)
+
+exprs <- as.data.frame(exprs)
+exprs$ensembl_gene_id <- rownames(exprs)
+
+#exprs <- filter(exprs, ensembl_gene_id %in% deg$gene_id)
+
+  # Gene location table --------------------------------------------------------------
 
 # Download ensembl human gene data
 # https://bioconductor.org/packages/release/bioc/vignettes/biomaRt/inst/doc/accessing_ensembl.html
@@ -136,24 +135,23 @@ genes2 <- getBM(attributes=c('ensembl_gene_id','hgnc_symbol','chromosome_name','
 # Only assoc gene loc data with genes that are in our expression data
 filtered_genes <- genes2[genes2$ensembl_gene_id %in% rownames(exprs),]
 
-exprs <- as.data.frame(exprs)
-exprs$ensembl_gene_id <- rownames(exprs)
-
 exprs <- left_join(filtered_genes, exprs, by = "ensembl_gene_id")
 exprs <- exprs[,c(2,6:ncol(exprs))]
 
-# filter autosomes
+# Filter autosomes
 table(filtered_genes$chromosome_name)
 filtered_genes <- filtered_genes[(filtered_genes$chromosome_name %in% c(1:22)),] 
-
 # Fill in NAs
 filtered_genes[filtered_genes == ""]<- NA
 filtered_genes <- na.omit(filtered_genes) %>% dplyr::select(-ensembl_gene_id) #rewrite table
+# Filter for gene of interest
+filtered_genes <-
+  filtered_genes[str_starts(filtered_genes$hgnc_symbol, cgas),]
 
-# filter na genes
+# Filter na genes
 filtered_genes <- filter(filtered_genes, !is.na(hgnc_symbol)) 
 
-# Filter exprs
+# Filter expression data
 exprs <- filter(exprs, exprs$hgnc_symbol %in% filtered_genes$hgnc_symbol)
 
 
@@ -169,12 +167,15 @@ covar <- fread(covar_data)
 # filter for study participants
 covar <- covar %>% filter(IID %in% keep$IID)
 # 93-120, VAST-3104, 8280 (Vi-PS?, but control in pheno file)
-covar <- dplyr::select(covar, IID, sex, age, chall_vax)
+covar2 <- pheno_exprs[, !str_detect(colnames(pheno_exprs), "ENSG")]
 
-# recode chall_vax to numeric
-covar$chall_vax <- as.factor(covar$chall_vax)
+covar <- covar2 %>% dplyr::select(cat_iid, sequence_pool) %>%
+  dplyr::rename(IID = cat_iid) %>% left_join(covar, by = "IID")
+
+covar <- dplyr::select(covar, IID, sex, age, sequence_pool, chall_vax)
+
+# Recode chall_vax to numeric
 table(covar$chall_vax)
-
 covar$chall_vax <- ifelse(covar$chall_vax == "TxNone",0,
                           ifelse(covar$chall_vax == "TxTy21a",1,
                                  ifelse(covar$chall_vax == "TxM01ZH09", 2,
@@ -191,6 +192,12 @@ covar <- covar[-1, ]
 write.table(covar, file = paste0(out_dir,study,time_point,"_covar.txt"),
             sep = "\t", quote = F, col.names = T, row.names = T)
 
+
+
+# Prep meQTL formats ----------------------------------------------------------
+# Prepare genotyping data/snp location data ------------------------------------
+# Update vars in geno_prep script and run as
+# Run script as source ~/GWAS_22/Enteric_GWAS/DEG-analysis/eQTL/2.geno_snp_prep.sh
 
 ## Check orders -----------------------------------------------------------------
 geno <- fread(paste0(out_dir,study,time_point,"_geno.txt"))
@@ -224,7 +231,6 @@ write.table(exprs, file = paste0(out_dir,study,time_point,"_exprs.txt"),
 
 library(MatrixEQTL)
 
-var <- c("iga")
 out_dir = getwd()
 SNP_file_name = paste0(out_dir, study, time_point, "_geno.txt");
 snps_location_file_name = paste0(out_dir, study, time_point, "_snp_loc.txt");
@@ -244,8 +250,8 @@ output_file_name_tra = tempfile();
 ## Thresholds -------------------------------------------------------------------
 
 # Only associations significant at this level will be saved
-pvOutputThreshold_cis = 1e-2;
-pvOutputThreshold_tra = 1e-4;
+pvOutputThreshold_cis = 5e-2;
+pvOutputThreshold_tra = 5e-4;
 
 # Error covariance matrix
 # Set to numeric() for identity.
@@ -321,7 +327,6 @@ cat('Analysis done in: ', me$time.in.sec, ' seconds', '\n');
 
 trans <- (me$trans$eqtls)
 cis <- (me$cis$eqtls)
-
 bonferroni <- (0.05/me$trans$ntests)
 
 #trans <- filter(trans, FDR <=0.05)
@@ -340,9 +345,17 @@ assoc <- fread(assoc_data)
 
 eqtls <-
   eqtls %>%
-  rename(SNP = snps) %>%
+  dplyr::rename(SNP = snps) %>%
   left_join(assoc, by = "SNP")
+#%>%
+ # dplyr::select(-TEST)
 
-write.csv(eqtls,
-          file = paste0(out_dir, study, time_point, var,"_eqtl.csv"),
+eqtl_sig <- eqtls %>% filter(FDR <= 0.05)
+
+write.csv(eqtl_sig,
+          file = paste0(out_dir, study, time_point, var,"sig_eqtl.csv"),
           row.names = FALSE)
+write.csv(eqtls,
+          file = paste0(out_dir, study, time_point, var,"all_eqtl.csv"),
+          row.names = FALSE)
+

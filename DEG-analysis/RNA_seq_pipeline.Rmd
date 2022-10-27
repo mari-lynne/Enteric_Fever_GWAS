@@ -763,22 +763,27 @@ cm <- results$contrasts
 fit2 <- results$fit2
 toptables <- results$top_results
 
+plotSA(fit2) #check variance post-voom
+```
+##### Top tables
+
+```{r top}
 # Saved in gwas_final/eqtl
 V7_vs_V0 <- toptables$V7_vs_V0
 D0_vs_V0 <- toptables$D0_vs_V0
 V1_vs_V0 <- toptables$V1_vs_V0
 write.csv(V7_vs_V0, file = "V7_V0_top.csv", row.names = F)
-write.csv(D0_vs_V0, file = "V7_V0_top.csv", row.names = F)
-write.csv(V1_vs_V0, file = "V7_V0_top.csv", row.names = F)
+write.csv(D0_vs_V0, file = "D0_vs_V0.csv", row.names = F)
+write.csv(V1_vs_V0, file = "V1_vs_V0_top.csv", row.names = F)
 
 exprs_t <- as.data.frame(t(lcpm))
 pheno_exprs <- bind_cols(pData, exprs_t)
 pheno_exprs <- pheno_exprs[,-c(1:5)]
 write.csv(pheno_exprs, file = "vast_lcpm.csv", row.names = T)
-
-
-plotSA(fit2) #check variance post-voom
 ```
+
+
+
 
 ### 3) Data visualisation
 

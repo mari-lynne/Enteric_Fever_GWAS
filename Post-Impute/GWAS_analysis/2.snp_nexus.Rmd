@@ -7,10 +7,11 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = TRUE)
-knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus/adnob')
+var <- c("adnob")
+knitr::opts_knit$set(root.dir = paste0("~/GWAS_22/gwas_final/merge/typhoid/vast/", var))
 ```
 
-### Aims
+#### Aims
 
 -   Upload SNP list to SNPNexus/VEP
 -   Results in various annotation files
@@ -21,10 +22,10 @@ knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus/
 
 ```{r Packages}
 library(dplyr)
-library(data.table)
 library(ggplot2)
 library(ggrepel)
 library(tidylog)
+library(data.table)
 library(stringr)
 library(stringi)
 library(openxlsx)
@@ -38,18 +39,15 @@ library(janitor)
 
 Upload data to SNP nexus to get genome annotation <https://www.snp-nexus.org/v4/>
 
-```{r format Nexus snp list}
-tophits <- fread("tophits/tophits_adnob_age.txt")
+```{r format Nexus snp list, message=FALSE}
+tophits <- fread(paste0(var,"_tophits.txt"))
 nexus <- select(tophits, CHR, BP, REF, ALT)
 nexus <- mutate(nexus, strand = rep(1, length(nexus$CHR)))
 nexus <- mutate(nexus, Type = rep("Chromosome", length(nexus$CHR)))
 nexus <- select(nexus, Type, CHR, BP, REF, ALT, strand)
-
 names(nexus) <-
   c("Type", "Id", "Position", "Alelle1", "Allele2", "Strand")
-
-write.table(nexus, "adnob2_nexus.txt", row.names = F, col.names = F, quote = F, sep = " ")
-#Then need to find what these snps are in LD with
+write.table(nexus, paste0(var,"_nexus.txt"), row.names = F, col.names = F, quote = F, sep = " ")
 ```
 
 Read nexus .txt files from assoc directory into R

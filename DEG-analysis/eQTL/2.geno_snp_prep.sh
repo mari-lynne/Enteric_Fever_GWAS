@@ -12,7 +12,7 @@ plink_dir=${dir}
 
 #~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus/adnob
 # data renamed to data
-data=D0.12h
+data=V0
 study=vast_
 outdir=~/GWAS_22/gwas_final/eQTL
 

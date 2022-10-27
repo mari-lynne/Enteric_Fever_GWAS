@@ -109,36 +109,35 @@ New PCs lamda (check using --adjust flag) = 1, no genomic inflation :)
 
 ```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
 # Typhoid Assoc -----------------------------------------------------------------
-test <- c("igg_2")
+test <- c("vast")
 
-setwd("~/GWAS_22/gwas_final/merge/typhoid/vast")
+# setwd("~/GWAS_22/gwas_final/merge/typhoid/vast")
 
 # Logistic
-#gwas <- fread(paste0(test, ".Diagnosed.glm.logistic.hybrid"))
-# colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
-# gwas <- select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT)) 
-
-
-#Linear
-gwas <- fread(paste0(test, ".glm.linear"))
-
-# Rename cols
-colnames(gwas) <-
-  c("CHR","BP", "SNP","REF","ALT","A1",
-    "TEST","OBS_CT","BETA", "SE",
-    "T_STAT", "P","ERRCODE"
-  )
+gwas <- fread(paste0(test, ".Diagnosed.glm.logistic.hybrid"))
+colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
 
 gwas <- filter(gwas, TEST == "ADD") 
-gwas <- select(gwas, !c(ERRCODE, OBS_CT))
+gwas <- dplyr::select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT))
+
+# #Linear
+# gwas <- fread(paste0(test, ".glm.linear"))
+# 
+# # Rename cols
+# colnames(gwas) <-
+#   c("CHR","BP", "SNP","REF","ALT","A1",
+#     "TEST","OBS_CT","BETA", "SE",
+#     "T_STAT", "P","ERRCODE"
+#   )
+
+# gwas <- select(gwas, !c(ERRCODE, OBS_CT, TEST))
 
 # Inspect top snps: ------------------------------------------------------------
 tophits <- filter(gwas, P < 1e-4)
 
 write.table(tophits, file = paste0(test, "_tophits.txt"), quote = F, row.names= F, sep = "\t")
-
 write.table(gwas, file = paste0(test, "_gwas.txt"), quote = F, row.names= F, sep = "\t")
-# delete og assoc output as very large
+# Delete og assoc output as very large
 
 # QQ plot
 # plot_dir <- c("~/GWAS_22/gwas_final/merge/enteric/assoc/plots/")
@@ -226,7 +225,7 @@ Ensembl coords +/- 10 KB Starting from FcGR2a Chromosome 1: 161,505,430 To FcGR2
 
 ```{bash GWAS FCGR}
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
---maf 0.1 \
+--maf 0.2 \
 --chr 1 \
 --from-bp 161505430 \
 --to-bp 161688654 \
@@ -249,14 +248,14 @@ Ensembl coords GRCh38.p13: 19: 54,874,235-54,891,420
 
 ```{bash Fcar}
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
---maf 0.1 \
+--maf 0.2 \
 --chr 19 \
 --from-bp 54864235 \
 --to-bp 54901420 \
 --pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
 --pheno-name Diagnosed \
 --covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
---covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-name sex, age, chall_vax, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
 --adjust \
@@ -275,13 +274,13 @@ cd ~/GWAS_22/gwas_final/merge/typhoid/vast
 plink2 --bfile vast \
 --maf 0.1 \
 --pheno pheno_vast.txt \
---pheno-name vi_ig_g_titre \
+--pheno-name Diagnosed \
 --covar covar_vast.txt \
 --covar-name sex, age, chall_vax, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
 --adjust \
---out igg_2
+--out vast
 ```
 
 ```{bash VAST-GWAS}
@@ -303,18 +302,18 @@ plink2 --bfile vast \
 
 
 ##### VAST FcgR/Fcar
-Q: are snps in the FcGR region affecting vaccine responses FcR
+Q: are snps in the FcGR region affecting vaccine responses FcR/mediated protection
 
 ```{bash VAST-FcGR}
 # Update pheno and file names as required
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
---maf 0.15 \
+--maf 0.2 \
 --chr 1 \
 --from-bp 161505430 \
 --to-bp 161688654 \
 --pheno ~/GWAS_22/gwas_final/meta/pheno_vast.txt \
 --pheno-name Diagnosed \
---covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar ~/GWAS_22/gwas_final/meta/covar_vast.txt \
 --covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
@@ -324,21 +323,18 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 ```{bash VAST-FcaR}
 # Update pheno and file names as required
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
---maf 0.15 \
+--maf 0.2 \
 --chr 19 \
 --from-bp 54864235 \
 --to-bp 54901420 \
 --pheno ~/GWAS_22/gwas_final/meta/pheno_vast.txt \
 --pheno-name Diagnosed \
---covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
+--covar ~/GWAS_22/gwas_final/meta/covar_vast.txt \
 --covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
 --adjust \
 --out vast/vast.fcar
-
-# vast_pheno.txt for all ab vars, pheno_vast.tx for diagnosis TODO:fix these later
-
 ```
 
 #### Previous GWAS SNPs
@@ -384,37 +380,33 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 
 **CGAS**
 
-
-
-
-
-
-
-
-
 ```{r CGAS Results, eval = TRUE, cache=TRUE}
 # Typhoid Assoc -----------------------------------------------------------------
 
-gwas <- fread("vast.fcgr.enteric.glm.linear")
+gwas <- fread("vast/vast.fcgr.Diagnosed.glm.logistic.hybrid")
 
 gwas <-
   filter(gwas, TEST == "ADD") 
 
-# Rename cols - Linear
-colnames(gwas) <-
-  c("CHR","BP", "SNP","REF","ALT","A1",
-    "TEST","OBS_CT","BETA", "SE",
-    "T_STAT", "P","ERRCODE"
-  )
+#gwas <- fread(paste0(test, ".Diagnosed.glm.logistic.hybrid"))
+colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
 
-gwas <- select(gwas, !c(ERRCODE, OBS_CT)) 
+gwas <- dplyr::select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT, TEST))
+
+# # Rename cols - Linear
+# colnames(gwas) <-
+#   c("CHR","BP", "SNP","REF","ALT","A1",
+#     "TEST","OBS_CT","BETA", "SE",
+#     "T_STAT", "P","ERRCODE"
+#   )
+# gwas <- select(gwas, !c(ERRCODE, OBS_CT)) 
 
 # Inspect top snps: ------------------------------------------------------------
 tophits <- filter(gwas, P < 0.05)
 
-write.table(tophits, file = "tophits_fcgr_enteric.txt", quote = F, row.names= F, sep = "\t")
+write.table(tophits, file = "tophits_vast_fcgr.txt", quote = F, row.names= F, sep = "\t")
+write.table(gwas, file = "vast_fcgr.txt", quote = F, row.names= F, sep = "\t")
 
-write.table(gwas, file = "vast_fcgr_enteric.txt", quote = F, row.names= F, sep = "\t")
 # delete og assoc output as very large
 ```
 
