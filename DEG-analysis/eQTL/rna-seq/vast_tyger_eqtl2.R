@@ -1,14 +1,16 @@
-# Libraries 
+# Packages
+
+#Library 
 library(dplyr)
 library(tidyr)
 library(limma)
 library(stringr)
-library(tidylog)
 library(data.table)
 library(stringi)
 library(ggplot2)
 library(forcats)
 library(factoextra)
+library(tidylog)
 library(ggpubr)
 library(tibble)
 library(stringr)
@@ -17,114 +19,145 @@ library(Biobase)
 library(janitor)
 library(biomaRt)
 
-# load(file = "~/RNA/oct/meqtl_TD.RData")
+#### Files -----------
 
-#Functions ####
+# Typhoid:
+# id_data <- c("~/GWAS_22/gwas_final/meta/geno_ids.csv")
+# plink <- c("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam")
+# assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/typhoid_tophits.txt")
+# covar_data <- c("~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt")
+# Merged RNAseq data 
+# study <- c("/vast_tyg")
+# pheno_exprs <- read.csv(file = "~/RNA/oct/combat_vast_tyger.csv")
+# Challenge data microarray:
 
+# Just VAST:
+plink <- c("~/GWAS_22/gwas_final/merge/typhoid/vast/vast.fam") #fam file
+assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/vast/iga_tophits.txt")
+covar_data <- c("~/GWAS_22/gwas_final/meta/covar_vast.txt")
+pheno_exprs <- read.csv(file = "vast/vast_tcpm.csv")
+# study_arm %in% c("ViTCV", "ViPS")
+pathway <- c("vast/iga_genes.csv") 
 
 # Directories and variables ---------------------------------------------------
-
 setwd("~/GWAS_22/gwas_final/eQTL")
-plot_dir <- c("~/GWAS_22/gwas_final/eQTL/plots") 
-study <- c("/T1T2")
-time_point <- c("/Baseline")
-time <- c("Baseline")
+
+study <- c("/vast_tyg")
+time_point <- c("/D7")
+time <- c("D7")
 var <- c("_gwas_")
-# cgas <- c("FCGR")
-# deg_data <- c("D0_V0.csv")
-# assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/fcgr_assoc_tophits.txt")
-
-id_data <- c("~/GWAS_22/gwas_final/meta/geno_ids_clean.csv")
-plink <- c("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam") #fam file
-assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus2/typhoid_tophits.txt")
-covar_data <- c("~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt")
+#cgas <- c("FCGR")
 out_dir <- paste0(getwd(), study)
-
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
-# Load micro-array experiment data
-load("T1_T2_with_rsn.norm.R")
-data = T1_T2_autosomes
-rm(T1_T2_autosomes)
+deg_data <- c("V7_V0.csv")
+pathway <- c("~/GWAS_22/gwas_final/InnateDB_genes.csv")
 
-exprs <- as.data.frame(exprs(data))
-pData <- clean_names(setDT(data@phenoData@data, keep.rownames = TRUE)[])
-fData <- clean_names(data@featureData@data)
+id_data <- c("~/GWAS_22/gwas_final/meta/geno_ids.csv")
+plink <- c("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam")
+assoc_data <- c("~/GWAS_22/gwas_final/merge/typhoid/assoc/nexus2/typhoid_tophits.txt")
+covar_data <- c("~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt")
 
-## Set up new vars -------------------------------------------------------------
-# Make new typhoid diagnosis variable, na's = 0
-pData <- pData %>%
-  mutate(diagnosis = ifelse(is.na(pData$day_of_typhoid_diagnosis_from_challenge), 0, 1))
-# Rename vars
-names(pData)[names(pData) == "days_since_challenge"] <- "time"
-names(pData)[names(pData) == "timepoint3"] <- "visit"
-# Time point
-table(pData$time, pData$study_arm)
-pData$visit <- str_replace_all(pData$visit, "D0\\+12", "D0.12h")
-# Make 12_24h time point
-pData <- pData %>% mutate(visit = ifelse(visit %in% c("D0.12h","D1"), "12-24h", visit))
-table(pData$visit, pData$study_arm)
-# New baseline
-pData <- pData %>% 
-  mutate(visit = ifelse(visit == "V0", "V28", visit))
-# Make new baseline time point using V0 for vaccinees and D0 for challenge
-pData <- pData %>% 
-  mutate(visit = ifelse(visit %in% c("V0","D0"), "Baseline", visit)) 
-table(pData$visit, pData$study_arm)
+pheno_exprs <- read.csv(file = "~/RNA/oct/combat_vast_tyger_d7_tpm.csv")
 
-# Filter DGE data for time point and genotyped samples ------------------------
-# Add exprs colnames to pData for matching tables by
-pData$exprs_cols <- colnames(exprs)
+# 1) Filter dge data for time point --------------------------------------------
 
-# 1) Filter time point
-pData <- pData %>% filter(visit == "Baseline")
-  #filter(time == "8" | time == "7" | time == "6.5")
+# Make new baseline time point, V0 for vaccinees and D0 for challenge
+# pheno_exprs <- pheno_exprs %>%
+#   mutate(time_point = ifelse(time_point3 == "D0" & (study_arm %in% c("ViTCV", "ViPS")), "V28", time_point3))
+# pheno_exprs <- pheno_exprs %>%
+#   mutate(time_point = ifelse(time_point %in% c("V0","D0"), "Baseline", time_point)) 
 
-# Remove duplicates
-pData <- pData[!stri_duplicated(pData$part_number),]
+pheno_exprs <- pheno_exprs %>%
+  dplyr::filter(time_point == "D7") 
 
-# 2) Filter for GWAS samples
+table(pheno_exprs$study_arm, pheno_exprs$time_point)
+pheno_exprs <- pheno_exprs[!stri_duplicated(pheno_exprs$lab_id),]
+
+
+# 2) Filter gwas data for study samples and dge data ---------------------------
 
 # Match by intersecting participant ids
-IDlink <- clean_names(read.csv(file = id_data))
-IDlink <- filter(IDlink, str_detect(meta_id, "T1|T2"))
-
-# Participant IDs dont match T2
-#Rename ID col so can join appropriately
-IDlink <- dplyr::rename(IDlink, part_number = participant_id)
+IDlink <- clean_names(read.csv(file = id_data)) %>% dplyr::rename(lab_id = lab_id)
 
 # Genotyping data in DGE data
 geno_ids <- IDlink %>%
-  filter(part_number %in% pData$part_number) # Do missing samples have D1
+  filter(lab_id %in% pheno_exprs$lab_id) %>% dplyr::rename(IID = cat_iid)
 
-# Filter DGE data for appropriate genotyped samples
-pData <- pData %>%
-  filter(part_number %in% geno_ids$part_number)
+# Get fam IDs
+fam <- fread(plink) %>% dplyr::rename(FID = V1, IID = V2)
 
-exprs <- exprs[,colnames(exprs) %in% pData$exprs_cols]
-
-# Filter gwas data for dge/study samples --------------------------------------
-
-# Write keep list
-keep <- geno_ids %>% dplyr::select(cat_iid) %>% dplyr::rename(IID = cat_iid)
-# add in leading zero ids
-keep$IID <- str_pad(keep$IID, 3, pad = "0")
-
-fam <- fread(plink)
-fam <- fam %>% dplyr::rename(FID = V1,
-                      IID = V2)
-
-# Get FIDs
-keep <- inner_join(keep, fam, by = "IID") %>% dplyr::select(FID, IID)
+geno_ids <- inner_join(geno_ids, fam, by = "IID") %>% dplyr::select(-starts_with("V"))
+keep <- inner_join(geno_ids, fam, by = c("FID","IID")) %>% dplyr::select(FID, IID)
 
 write.table(keep,
             file = paste0(out_dir,time_point,"_keep.txt"),
             sep = "\t",
             row.names = F,
-            quote = F)
+            quote = F,
+            col.names = T)
+
+# 3) Filter gene expression data -----------------------------------------------
+
+# Filter for genotyped samples
+pheno_exprs <- inner_join(geno_ids, pheno_exprs, by = "lab_id")
+
+# Get expression data
+exprs <- pheno_exprs[,str_detect(colnames(pheno_exprs),"ENS")]
+# exprs <- pheno_exprs[,-c(1:51)]
+exprs <- as.data.frame(t(exprs))
+colnames(exprs) <- pheno_exprs$IID
+# exprs$hgnc_symbol <- rownames(exprs)
+exprs$ensembl_gene_id <- rownames(exprs)
+
+# Filter for DEG genes
+# deg <- clean_names(read.csv(file = deg_data))
+# deg <- deg %>% dplyr::filter(p_value <= 0.05)
+# exprs <- filter(exprs, ensembl_gene_id %in% deg$gene_id)
+
+# Filter for genes of interest/pathway -----------------------------------------
+
+# Biomart data
+library(biomaRt)
+ensembl = useEnsembl(biomart="ensembl", dataset="hsapiens_gene_ensembl")
+genes <- getBM(attributes=c('ensembl_gene_id','hgnc_symbol','chromosome_name','start_position','end_position'),mart = ensembl)
+
+# Immune genes (for vaccination study) 
+immune <- clean_names(read.csv(file = pathway)) %>% dplyr::rename(ensembl_gene_id = ensembl) %>% inner_join(genes, by = "ensembl_gene_id") # hgnc_symbol
+
+# Filter for autsomes and immune dge samples
+immune <- immune %>%
+  filter(chromosome_name %in% (as.character(c(1:22)))) %>% inner_join(exprs, by = "ensembl_gene_id")
+
+# Make tables
+exprs <- immune[,c(27,31:ncol(immune))] # immune[,c(1,6:ncol(immune))]
+filtered_genes <- dplyr::select(immune, hgnc_symbol, chromosome_name, start_position, end_position)
+
+write.table(exprs, file = paste0(out_dir,time_point,"_exprs.txt"),
+            sep = "\t", quote = F,row.names = F)
+write.table(filtered_genes, file = paste0(out_dir,time_point,"_gene_loc.txt"),
+            sep = "\t", quote = F, row.names = F)
+
+# gwas_genes <- clean_names(read.csv(file = "~/GWAS_22/gwas_final/gwas_vaccine_traits2.csv"))
+# gwas_genes <- rename(gwas_genes, hgnc_symbol = mapped_gene)
+# gwas_genes <- inner_join(gwas_genes, genes2, by = "hgnc_symbol")
+# gene_list <- c(immune$ensembl, gwas_genes$ensembl_gene_id)
+# genes2 <- dplyr::filter(genes2, ensembl_gene_id %in% gene_list)
+# Only assoc gene loc data with genes that are in our expression data
+# filtered_genes <- genes2[genes2$ensembl_gene_id %in% rownames(exprs),]
+# Fill in NAs
+# filtered_genes[filtered_genes == ""]<- NA
+# filtered_genes <- na.omit(filtered_genes) %>% dplyr::select(-ensembl_gene_id) #rewrite table
+# Filter for gene of interest
+# filtered_genes <-
+  # filtered_genes[str_starts(filtered_genes$hgnc_symbol, cgas),]
+# Filter na genes
+# filtered_genes <- filter(filtered_genes, !is.na(hgnc_symbol)) 
+# Filter expression data
+# exprs <- filter(exprs, exprs$hgnc_symbol %in% filtered_genes$hgnc_symbol)
 
 
-# Filter for topsnps ----------------------------------------------------------
+# Top SNPs ----------------------------------------------------------
 
 top <- fread(assoc_data)
 snp.keep <- top$SNP
@@ -134,91 +167,29 @@ write.table(snp.keep, file = paste0(out_dir,time_point,"_snp_keep.txt"),
             quote = F,
             col.names = F,
             row.names = F)
-
-# Prep meQTL formats ----------------------------------------------------------
-
-# Expression table ------------------------------------------------------------
-
-# Update Sample IDs to match geno IDs
-pData <- left_join(pData, geno_ids, by = "part_number")
-
-# Add in leading zeros
-pData$cat_iid <- str_pad(pData$cat_iid , 3, pad = "0")
-colnames(exprs) <- pData$cat_iid
-exprs$ensembl_gene_id <- rownames(exprs)
-
-# Gene location table --------------------------------------------------------------
-
-library(biomaRt)
-ensembl = useEnsembl(biomart="ensembl", dataset="hsapiens_gene_ensembl")
-genes <- getBM(attributes=c('ensembl_gene_id','hgnc_symbol','chromosome_name','start_position','end_position'),mart = ensembl)
-
-pathway <- c("~/GWAS_22/gwas_final/InnateDB_genes.csv")
-immune <- clean_names(read.csv(file = pathway)) %>% dplyr::rename(ensembl_gene_id = ensembl) %>% inner_join(genes, by = "ensembl_gene_id") # hgnc_symbol
-
-# Fill in NAs
-immune[immune == ""]<- NA
-
-# Filter for autsomes and immune dge samples
-immune <- immune %>%
-  filter(chromosome_name %in% (as.character(c(1:22))), !is.na(hgnc_symbol)) %>% inner_join(exprs, by = "ensembl_gene_id")
-
-# Make tables
-exprs <- immune[,c(27,31:ncol(immune))] # immune[,c(1,6:ncol(immune))]
-
-filtered_genes <- dplyr::select(immune, hgnc_symbol, chromosome_name, start_position, end_position)
-
-write.table(exprs, file = paste0(out_dir,time_point,"_exprs.txt"),
-            sep = "\t", quote = F,row.names = F)
-write.table(filtered_genes, file = paste0(out_dir,time_point,"_gene_loc.txt"),
-            sep = "\t", quote = F, row.names = F)
-
-# # Only assoc gene loc data with genes that are in our expression data
-# filtered_genes <- genes[genes$ensembl_gene_id %in% rownames(exprs),]
-# filtered_genes <- filtered_genes[(filtered_genes$chromosome_name %in% c(1:22)),] 
-# # Fill in NAs
-# filtered_genes[filtered_genes == ""]<- NA
-# # filter na genes
-# filtered_genes <- filter(filtered_genes, !is.na(hgnc_symbol))
-# # Filter for gene of interest
-# filtered_genes <-
-#   filtered_genes[str_starts(filtered_genes$hgnc_symbol, cgas),]
-# # Filter exprs
-# exprs <- filter(exprs, row.names(exprs) %in% filtered_genes$ensembl_gene_id)
-# # Update to symbol
-# exprs$ensembl_gene_id <- rownames(exprs)
-# exprs <- left_join(filtered_genes, exprs, by = "ensembl_gene_id")
-# exprs <- exprs[,c(2,6:ncol(exprs))]
-# filtered_genes <- filtered_genes %>% dplyr::select(-ensembl_gene_id)
-# 
-# write.table(filtered_genes, file = paste0(out_dir,time_point,"_gene_loc.txt"),
-#             sep = "\t", quote = F, row.names = F)
-# write.table(exprs, file = paste0(out_dir,time_point,"_exprs.txt"),
-#             sep = "\t", quote = F, row.names = F)
-
 # Covar table -----------------------------------------------------------------
-covar <- fread("~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt")
-covar <- dplyr::select(covar, IID, sex, age, dose, chall_vax)
+
+covar <- fread(covar_data)
 # filter for study participants
 covar <- covar %>% filter(IID %in% keep$IID)
+# 93-120, VAST-3104, 8280 (Vi-PS?, but control in pheno file)
+# covar2 <- pheno_exprs[, !str_detect(colnames(pheno_exprs), "ENSG")]
 
-# recode chall_vax to numeric
+# covar <- covar2 %>% dplyr::select(cat_iid, sequence_pool) %>%
+# dplyr::rename(IID = cat_iid) %>% left_join(covar, by = "IID")
+
+covar <- dplyr::select(covar, IID, sex, age, chall_vax) # chall_vax)
+# sequence_pool, if just vast
+
+# Recode chall_vax to numeric
 table(covar$chall_vax)
-
 covar$chall_vax <- ifelse(covar$chall_vax == "TxNone",0,
-                        ifelse(covar$chall_vax == "TxTy21a",1,
-                               ifelse(covar$chall_vax == "TxM01ZH09", 2,NA)))
-
-# Add extra covars
-table(pData$array_experiment)
-table(pData$time)
-
-covar <- pData %>%
-  dplyr::select(cat_iid, array_experiment) %>%
-  dplyr::rename(IID = cat_iid) %>%
-  left_join(covar) 
-
-# covar <- dplyr::select(covar, -chall_vax)
+                          ifelse(covar$chall_vax == "TxTy21a",1,
+                                 ifelse(covar$chall_vax == "TxM01ZH09", 2,
+                                       ifelse(covar$chall_vax == "TxVi-PS", 3,
+                                               ifelse(covar$chall_vax == "TxVi-TT", 4,
+                                                     ifelse(covar$chall_vax == "TNxNone", 5,
+                                        NA))))))
 
 # Transpose
 covar <-  t(covar)
@@ -228,19 +199,28 @@ covar <- covar[-1, ]
 write.table(covar, file = paste0(out_dir,time_point,"_covar.txt"),
             sep = "\t", quote = F, col.names = T, row.names = T)
 
+
+
+# Prep meQTL formats ----------------------------------------------------------
 # Prepare genotyping data/snp location data ------------------------------------
 
-# Run script in terminal as source ~/GWAS_22/Enteric_GWAS/DEG-analysis/eQTL/2.geno_snp_prep.sh
+# Update vars in geno_prep script and run as:
+# Run script as source ~/GWAS_22/Enteric_GWAS/DEG-analysis/eQTL/2.geno_snp_prep.sh
 
-# Check orders -----------------------------------------------------------------
-geno <- fread(paste0(out_dir,time_point,"_geno.txt"), header = T)
-covar <- fread(paste0(out_dir,time_point,"_covar.txt"))
-exprs <- fread(paste0(out_dir,time_point,"_exprs.txt"), header = T)
+## Check orders -----------------------------------------------------------------
+geno <- fread(paste0(out_dir, time_point, "_geno.txt"))
+covar <- fread(paste0(out_dir, time_point, "_covar.txt"))
+exprs <- fread(paste0(out_dir, time_point, "_exprs.txt"))
+
 
 # Clean geno iid names
-colnames(geno) <- str_sub(colnames(geno), start= -3)
 geno <- geno %>% dplyr::rename(V1 = SNP)
+colnames(geno) <- str_sub(colnames(geno), start= -4)
+
 exprs <- exprs %>% dplyr::rename(V1 = hgnc_symbol)
+colnames(exprs) <- str_sub(colnames(exprs), start= -4)
+
+colnames(covar) <- str_sub(colnames(covar), start= -4)
 
 # Order other tables by geno
 names.use <- names(geno)
@@ -251,7 +231,7 @@ exprs <- exprs[, ..names.use]
 write.table(geno, file = paste0(out_dir,time_point,"_geno.txt"),
             sep = "\t", quote = F, col.names = T, row.names = F)
 
-write.table(covar, file = paste0(out_dir,time_point,"_covar.txt"),
+write.table(covar, file = paste0(out_dir, time_point,"_covar.txt"),
             sep = "\t", quote = F, col.names = T, row.names = F)
 
 write.table(exprs, file = paste0(out_dir,time_point,"_exprs.txt"),
@@ -358,10 +338,16 @@ trans <- (me$trans$eqtls)
 cis <- (me$cis$eqtls)
 bonferroni <- (0.05/me$trans$ntests)
 
+me$cis$ntests
+me$trans$ntests/2
+
+0.05/436
+
 #trans <- filter(trans, FDR <=0.05)
 #cis <- filter(cis, FDR <=0.05)
 
 ## Merge gwas data ------------------------------------------------------------
+
 trans$eqtl <- rep("trans", nrow(trans))
 cis$eqtl <- rep("cis", nrow(cis))
 
@@ -370,24 +356,18 @@ eqtls <-
 
 ## Merge assoc data ####
 assoc <- fread(assoc_data)
-
 eqtls <-
   eqtls %>%
   dplyr::rename(SNP = snps) %>%
   left_join(assoc, by = "SNP")
-#%>%
-# dplyr::select(-TEST)
 
-
-## Save data -------------------------------------------------------------------
+## Final results + significance ------------------------------------------------
 eqtl_sig <- eqtls %>% filter(FDR <= 0.05)
 
 write.csv(eqtl_sig,
-          file = paste0(out_dir, time_point, var,"sig_eqtl.csv"),
+          file = paste0(out_dir, time_point, var,"sig_eqtl2.csv"),
           row.names = FALSE)
 write.csv(eqtls,
-          file = paste0(out_dir, time_point, var,"all_eqtl.csv"),
+          file = paste0(out_dir, time_point, var,"all_eqtl2.csv"),
           row.names = FALSE)
-
-
 
