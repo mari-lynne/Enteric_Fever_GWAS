@@ -100,6 +100,22 @@ plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --adjust \
 --out typhoid2
 ```
+#### Paratyphoid fever
+
+```{bash GWAS parayphoid fever}
+plink2 --bfile ~/GWAS_22/gwas_final/merge/para/QC/para.IBD \
+--maf 0.1 \
+--pheno ~/GWAS_22/gwas_final/meta/para_pheno.txt \
+--pheno-name Diagnosed \
+--covar ~/GWAS_22/gwas_final/meta/para_pcacovar.txt \
+--covar-name sex, age, re_challenge, PC1, PC2, PC3, PC4, PC5, PC6, PC7, PC8  \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out para
+```
+
+
 
 New PCs lamda (check using --adjust flag) = 1, no genomic inflation :)
 
@@ -109,7 +125,7 @@ New PCs lamda (check using --adjust flag) = 1, no genomic inflation :)
 
 ```{r Plot Assoc Results, eval = TRUE, cache=TRUE}
 # Typhoid Assoc -----------------------------------------------------------------
-test <- c("vast")
+test <- c("para")
 
 # setwd("~/GWAS_22/gwas_final/merge/typhoid/vast")
 
@@ -118,7 +134,7 @@ gwas <- fread(paste0(test, ".Diagnosed.glm.logistic.hybrid"))
 colnames(gwas) <- c("CHR","BP", "SNP","REF","ALT","A1", "FIRTH?", "TEST","OBS_CT","OR","LOG(OR)_SE","Z_STAT", "P","ERRCODE")
 
 gwas <- filter(gwas, TEST == "ADD") 
-gwas <- dplyr::select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT))
+gwas <- dplyr::select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT, TEST))
 
 # #Linear
 # gwas <- fread(paste0(test, ".glm.linear"))
@@ -133,7 +149,7 @@ gwas <- dplyr::select(gwas, !c(`FIRTH?`,ERRCODE, OBS_CT))
 # gwas <- select(gwas, !c(ERRCODE, OBS_CT, TEST))
 
 # Inspect top snps: ------------------------------------------------------------
-tophits <- filter(gwas, P < 1e-4)
+tophits <- filter(gwas, P < 1e-3)
 
 write.table(tophits, file = paste0(test, "_tophits.txt"), quote = F, row.names= F, sep = "\t")
 write.table(gwas, file = paste0(test, "_gwas.txt"), quote = F, row.names= F, sep = "\t")
@@ -151,7 +167,9 @@ write.table(gwas, file = paste0(test, "_gwas.txt"), quote = F, row.names= F, sep
 -   Can add labels from annotation later
 
 ```{r manhattan-setup}
-#gwas <- paste0(test, "_gwas.txt")
+
+
+gwas <- fread(paste0("~/GWAS_22/gwas_final/merge/typhoid/vast/igg/", test, "_gwas.txt"))
 
 gwas_data <- clean_names(gwas)
 
@@ -175,7 +193,7 @@ gwas_data <- gwas_data %>%
   inner_join(data_cum, by = "chr") %>% mutate(bp_cum = bp + bp_add)
 
 gwas_data <- gwas_data %>%
-select(-test,-bp_add)
+select(-bp_add)
 
 axis_set <- gwas_data %>% 
   group_by(chr) %>% 
@@ -185,14 +203,19 @@ ylim <- gwas_data %>%
   filter(p == min(p)) %>% 
   mutate(ylim = abs(floor(log10(p))) + 2) %>% 
   pull(ylim)
-sig <- 1e-5 # Top = 9.9e-5
+sig <- 1e-4 # Top = 9.9e-5
+
 ```
 
 ```{r basic-manhattan}
 # Basic Plot ----------------------------------------------------
 setwd("~/GWAS_22/gwas_final/merge/typhoid/vast")
+test <- c("igg")
+
 plot_dir <- plot_dir <- paste0(getwd(),"/plots/")
+
 png(file = (paste0(plot_dir,test,"-man.png")), width = 9, height = 6, units = "in", res = 300)
+
 ggplot(gwas_data,
        aes(
          x = bp_cum,
@@ -200,7 +223,7 @@ ggplot(gwas_data,
          color = as_factor(chr),
          size = -log10(p)
        )) +
-  geom_hline(yintercept = -log10(sig),
+  geom_hline(yintercept = 5e-5,
              color = "grey40",
              linetype = "dashed") +
   geom_point(alpha = 0.8, size = 1.3) +
@@ -216,6 +239,7 @@ ggplot(gwas_data,
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank()
   )
+
 dev.off()
 ```
 
@@ -274,13 +298,12 @@ cd ~/GWAS_22/gwas_final/merge/typhoid/vast
 plink2 --bfile vast \
 --maf 0.1 \
 --pheno pheno_vast.txt \
---pheno-name Diagnosed \
+--pheno-name vi_ig_a_titre \
 --covar covar_vast.txt \
---covar-name sex, age, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-name sex, age, chall_vax, PC1, PC2, PC3, PC4, PC5, PC6, bmi \
 --covar-variance-standardize \
---glm \
---adjust \
---out vast
+--glm firth \
+--out iga_2_bmi
 ```
 
 ```{bash VAST-GWAS}
@@ -364,16 +387,16 @@ NS, P = 0.08
 plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
 --maf 0.1 \
 --chr 2 \
---from-bp 161337417 \
---to-bp 162737775  \
+--from-bp 31163056 \
+--to-bp 31243858  \
 --pheno ~/GWAS_22/gwas_final/meta/pheno_typhoid.txt \
 --pheno-name Diagnosed \
 --covar ~/GWAS_22/gwas_final/meta/typhoid_pcacovar.txt \
---covar-name sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-name age, sex, study, chall_vax, PC1, PC2, PC3, PC4, PC5 \
 --covar-variance-standardize \
 --glm \
 --adjust \
---out park2
+--out tlr4
 ```
 
 ### Candiate gene association: Results
