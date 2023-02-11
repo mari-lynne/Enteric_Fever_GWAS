@@ -5,7 +5,6 @@ plot_dir <- c("~/RNA/oct/plots")
 
 #load packages #
 library(dplyr)
-library(data.table)
 library(ggplot2)
 library(ggrepel) 
 library(tidyr)
@@ -13,6 +12,7 @@ library(tidylog)
 library(limma)
 library(stringi)
 library(janitor)
+library(data.table)
 library(stringr)
 library(splines)
 library(edgeR)
@@ -48,8 +48,9 @@ colnames(data$meta_data) <-
   stri_replace_all_regex(
     colnames(data$meta_data),
     pattern = c('_x', 'x_',
-                '_e2_c3', 'e3_c3', 'e5_c5'),replacement = c(''),
+                '_e2_c3', 'e3_c3', 'e5_c5'),replacement = c(""),
     vectorize = FALSE)
+
 data$samples$batch <- rep("3",nrow(data$samples))
 data$meta_data <- data$meta_data %>% select(-group)
 
@@ -128,9 +129,15 @@ rm(data)
 
 save.image(file = "VAST_Tyger_oct.RData")
 
-## Merge studies ----------------------------------------------------------------
+## Merge studies (start here)---------------------------------------------------
 
 load(file = "VAST_Tyger_oct.RData")
+
+# Option, exclude vaccinated participants:
+
+idx <- (vast$samples$study_arm == "CTRL")
+vast <- vast[,idx]
+
 
 counts <- cbind(tyger$counts,vast$counts)
 samples <- rbind(tyger$samples,vast$samples)
@@ -140,14 +147,18 @@ table(samples$sequence_pool)
 table(samples$study_arm)
 table(samples$time_point3)
 
+
 # Filter contaminated
 # should filter for contaminated samples if I'm going to just use the uncontaminated 
 samples <- filter(samples, contaminated_sample == "No")
 
+# remove baseline samples in original pool who have lab ids in check
+check <- filter(samples, sequence_pool == "resequence" & time == "0")
+check <- filter(samples, (time == "0" & sequence_pool == "original" & lab_id %in% check$lab_id))
+samples <- filter(samples, rownames(samples) %!in% rownames(check))
+
 # Clean diagnosis var
 table(samples$diagnosis)
-
-no_chall <- filter(samples, diagnosis == "UNKNOWN - Not Challenged")
 samples <- filter(samples, diagnosis != "UNKNOWN - Not Challenged")
 
 # Clean diagnosis var
@@ -166,10 +177,9 @@ table(samples$batch_pool)
 # Harmonise time points -------------------------------------------------------
 
 # recode time_point3
+table(samples$time_point)
 # D0.12h <- D0+12
 # D0 <- D00
-table(samples$time_point)
-
 samples <- samples %>%
   mutate(time_point3 = ifelse(time_point3 == "D0+12h", "D0.12h", time_point3)) %>%
   mutate(time_point3 = ifelse(time_point3 == "D00", "D0", time_point3))
@@ -178,19 +188,28 @@ samples <- samples %>%
 samples <- samples %>%
   mutate(time_point = ifelse(time_point3 == "D0" & (study_arm %in% c("ViTCV", "ViPS")), "V28", time_point3))
 
-
 # Make new baseline time point, V0 for vaccinees and D0 for challenge
 samples <- samples %>%
   mutate(time_point = ifelse(time_point %in% c("V0","D0"), "Baseline", time_point)) 
+
+# Day 7 time point, around D7 for TD
+samples <- samples %>% 
+  mutate(time_point = ifelse(time %in% c("6","7","8") & (time_point3 == "TD"), "D7", time_point))
+
+# samples <- samples %>% 
+# mutate(time_point = ifelse(time_point == "D7" & batch == "3", "D7", time_point))
+
+table(samples$time_point, samples$diagnosis)
 # filter vaccine timepoints and D01-14 which are study specific
+
 samples <- filter(samples, time_point %in% c("Baseline", "D0.12h", "TD"))
 
-tab <- table(samples$time_point, samples$batch, samples$diagnosis)
+# Just D7
+# samples <- filter(samples, time_point == "D7")
+tab <- table(samples$time_point, samples$batch_pool, samples$diagnosis)
 addmargins(tab)
 
 counts <- counts[ , colnames(counts) %in%  rownames(samples)]
-
-
 
 # Batch correction -------------------------------------------------------------
 
@@ -200,16 +219,27 @@ counts <- counts[ , colnames(counts) %in%  rownames(samples)]
 
 samples$arm_time <- str_c(samples$study_arm, samples$time_point, sep = "_")
 
-covar <- samples %>% dplyr::select(arm_time)
-table(samples$batch, samples$study_arm)
+# Merge TN and control samples
+samples <- samples %>% 
+  mutate(chall_vax = ifelse(str_detect(study_arm, "TN|CTRL"), "T", study_arm))
+
+# covar <- samples %>% dplyr::select(arm_time)
+covar <- samples %>% dplyr::select(time_point)
+
+table(samples$batch_pool, samples$chall_vax)
+
+ #combat <- sva::ComBat_seq(counts=counts,
+                          #batch=samples$batch,
+                          #group=samples$chall_vax)
 
 combat <- sva::ComBat_seq(counts=counts,
-                          batch=samples$batch,
+                          batch=samples$batch_pool,
                           group=samples$time_point)
 
 
-# It's worse with seq_pool in as unbalanced
-# 
+# 7/nov/22group is the var we want to see an effect in, so vaccine vs control, but we also need time point, unless running bc separate
+# 31/oct/22
+# It's worse with seq_pool in as unbalanced, therefore just correct on batch here, add seq_pool as covariate later
 
 
 ## PCA -------------------------------------------------------------------------
@@ -218,16 +248,50 @@ combat <- sva::ComBat_seq(counts=counts,
 
 # see batch_pcas.R
 
+#### Calculate TPM ------------------------------------------------------------
+
+keep.exprs <- filterByExpr(combat, group = samples$time_point)
+
+combat <- combat[keep.exprs,] #subset og data
+dim(combat)
+
+tpm3 <- function(counts,len) {
+  x <- counts/len
+  return(t(t(x)*1e6/colSums(x)))
+}
+
+gene_info <- vast$genes[vast$genes$gene_id %in% row.names(combat),c(1,6)]
+names.use <- rownames(combat) #order
+gene_info <- gene_info[names.use, 2]
+
+tpm <- tpm3(combat, gene_info)
+exprs <- as.data.frame(t(tpm))
+exprs$row_names <- rownames(exprs)
+samples$row_names <- rownames(samples)
+pheno_exprs <- left_join(samples, exprs, by = "row_names")
+
 
 ### Save data ----------------------------------------------------------------
-save.image(file = "VAST_Tyger_oct.RData")
+save.image(file = "VAST_Tyger_nov2.RData")
+
+# gene info
+gene_info <- vast$genes[vast$genes$gene_id %in% row.names(combat),c(1,6)]
+names.use <- rownames(combat) # order
+gene_info <- gene_info[names.use, 2]
+
+vast_tyg_novax <- DGEList(counts =combat, samples=samples, genes = vast$genes)
+saveRDS(vast_tyg_novax, file = "VT_novax.Rds")
+
+dim(combat)
+dim(vast$genes)
+
 load(file = "VAST_Tyger_oct.RData")
 
-pheno_exprs <- bind_cols(samples, comb_t)
 
-write.csv(pheno_exprs, file = "combat_vast_tyger.csv")
+# write.csv(pheno_exprs, file = "combat_vast_tyger_d7_tpm.csv")
 
 # So far batches look better (although not fully corrected), biological affects not changed when comparing within a batch
+
 
 
 
