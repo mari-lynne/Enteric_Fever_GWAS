@@ -1,0 +1,894 @@
+---
+title: "RNASeq Pipeline"
+author: "Mari Johnson"
+date: '2022-08-29'
+output: html_document
+---
+
+```{r Rmd setup}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, error = TRUE)
+knitr::opts_knit$set(root.dir = '/home/mari/RNA/oct') #Permanently sets wd for Rmd
+```
+
+### Aims:
+
+1)  Pre-process RNAseq data for typhoid challenge and vaccination studies
+2)  Run differential gene expression analysis at both a global level, and individual gene scale
+
+### Overview of chapters
+
+1)  Pre-processing
+
+-   Read and structure count data
+-   Remove lowly expressed genes
+-   Transform and normalise data
+-   Limma Voom
+
+2)  DGE analysis
+
+-   Create design matrix
+-   Contrast matrix
+-   Fit linear model for comparisons of interest
+
+3)  Volcano Plots
+
+-   Examine differentially expressed genes
+-   Visualise comparisons with volcano plots
+-   Highlight top sig genes and genes of interest
+
+4)  Spline gene modelling
+
+-   Re-organise normalised RNAseq data from voom object
+-   Fit splines model to gene expression values over time course
+-   Visualise changes in gene expression using fitted splines/box plots
+-   Test for statistical significance
+
+Materials:
+
+-   <https://ucdavis-bioinformatics-training.github.io/2018-June-RNA-Seq-Workshop/thursday/DE.html>
+
+-   <https://www.bioconductor.org/packages/devel/workflows/vignettes/RNAseq123/inst/doc/limmaWorkflow.html>
+
+-   <https://www.youtube.com/watch?v=z36fu178jIQ&ab_channel=LiquidBrainBioinformatics>
+
+## 1) Pre-processing
+
+### R set up and Functions
+
+```{r Set Directories, warning=FALSE, message=FALSE, error = FALSE}
+setwd("~/RNA/oct") #where data is saved
+plot_dir <- c("~/RNA/oct/plots/vast_tyg/") #where to save output plots
+
+load(file = "vt_bc.nov8.RData")
+
+#load packages #
+library(dplyr)
+library(ggplot2)
+library(ggrepel) 
+library(tidyr)
+library(data.table)
+library(tidylog)
+library(limma)
+library(stringi)
+library(janitor)
+library(stringr)
+library(splines)
+library(edgeR)
+library(BiocManager)
+library(DESeq2)
+library(Glimma)
+library(RColorBrewer)
+```
+
+```{r functions}
+#Just contrast matrix function ####
+make_contrasts <- function (group, control, delim = "_vs_", des_mat) {
+  #/ define groups and baseline to make contrasts
+  
+  suppressMessages(require(limma))
+  
+  #Checks
+  if (is.null(group))
+    stop("Error: group arg is missing")
+  
+  #/ ensure unique group levels
+  group <- sort(unique(as.character(group)))
+  
+  # Write limma code by pasting groups
+  #/ if control var is present, compare all groups to control
+  #/  else make all comparisons using combn function
+  if (!missing(control)) {
+    combo <- paste0(group, "-",  control)
+  } else{
+    combo <- combn(group,2,
+      FUN = function(x) {
+        paste0(x[1], "-", x[2])
+      }
+    )
+  }
+  
+  #/ make contrasts
+  if (!missing(des_mat)) {
+    contrasts <-
+      limma::makeContrasts(contrasts = combo, levels = colnames(des_mat))
+  } else{
+    contrasts <- limma::makeContrasts(contrasts = combo, levels = group)
+    message("No Design Matrix provided, using only defined contrasts for matrix")
+  }
+  colnames(contrasts) <- gsub("-", delim, colnames(contrasts))
+  #Todo: levels need to be design matrix, poss modify to have group or design option later
+  #Only do lmfit step if design and fit are supplied
+  
+  return(contrasts)
+}
+
+
+#Combo with ebayes #####
+contrast_2_lm <-
+  function(group,
+           control,
+           delim = "_vs_",
+           des_mat,
+           efit,
+           topTab = "TRUE") {
+    #Define groups and baseline to make contrasts
+    #Input design and previous model fit model for it to work
+    #Toptab gives option to output results
+    
+    #/ Checks
+    suppressMessages(require(limma))
+    if (is.null(group))
+      stop("Error: group arg is missing")
+    
+    #/ Ensure unique group levels
+    group <- sort(unique(as.character(group)))
+    
+    #/ Define contrasts
+    if (!missing(control)) {
+      #compare to control
+      combo <- paste0(group, "-",  control)
+    } else{
+      #make all pairwise comparisons
+      combo <-
+        combn(group,2,
+          FUN = function(x) {
+            paste0(x[1], "-", x[2])
+          }
+        )
+    }
+    
+    #/ Make contrast matrix
+    if (!missing(des_mat)) {
+      contrasts <-
+        limma::makeContrasts(contrasts = combo, levels = colnames(design))
+    } else{
+      #No design + no efit
+      contrasts <- limma::makeContrasts(contrasts = combo, levels = group)
+      message("No Design Matrix provided, using only defined contrasts for matrix")
+    }
+    colnames(contrasts) <- gsub("-", delim, colnames(contrasts))
+    
+    
+    #/ Model fit and deg results
+    if (!missing(efit) &
+        !missing(des_mat) & topTab == "TRUE") {
+      #Requires efit and dmat args
+      fit2 <- contrasts.fit(efit, contrasts)
+      fit2 <- eBayes(fit2)
+      message("Performing ebayes fit of linear model")
+      top_results <- list() #TopTable Results
+      for (i in colnames(contrasts)) {
+        top_results[[i]] <- topTable(fit2, coef = i, number = Inf)
+        limma_list <-
+          list(contrasts = contrasts,
+               fit2 = fit2,
+               top_results = top_results)
+      }
+      message(
+        "Contrast matrix (contrasts), ebayes (fit2), top DEGs (top_results) saved in list\n
+          Subset list with either $ or [[]] for results"
+      )
+    } else if (!missing(efit) &
+               !missing(des_mat) & topTab != "TRUE") {
+      #Without toptable option
+      fit2 <- contrasts.fit(efit, contrasts)
+      fit2 <- eBayes(fit2)
+      message("Performing ebayes fit of linear model")
+      limma_list <- list(contrasts = contrasts, fit2 = fit2)
+    } else if (missing(efit) | missing(des_mat)) {
+      limma_list <- list(contrasts)
+      warning("No linear model or design matrix supplied, returning contrast matrix only")
+    }
+    return(limma_list)
+  }
+
+#Volcano plot function ####
+
+plot_vol <- function(deg,
+                     p = 0.05,
+                     FC = 0,
+                     lab_type = "top",
+                     genes,
+                     top = 20,
+                     title = "",
+                     alpha = 0.98,
+                     colours = c("#a50000", "#800000", "#ef5a3a", "orange", "yellow")) {
+  #/ Checks
+  if (missing(deg)) {
+    stop("Error: deg arg is missing. Please provide a toptable data frame")
+  }
+  #if (!missing(genes) & !is.character(genes)){
+  #stop("Error: label is not a character vector")}
+  if (!missing(lab_type) & lab_type != c('top') & missing(genes)) {
+    stop("Error: label requires character vector with selected genes")
+  }
+  
+  #/ 1) Define sig values
+  log_p <- -log10(p)
+  #Adj p values #need to convert adjusted p-val to unadjusted for plot yscale
+  values <- seq(0.050, 0.051, by = 0.00001)
+  deg$adj.P.Val <-
+    round(deg$adj.P.Val, 5) #This is such a janky way I apologise
+  adj.p <- deg[(deg$adj.P.Val %in% (values)), c("P.Value")]
+  adj.p <-  min(adj.p)
+  log_adj <- -log10(adj.p)
+  
+  ##/Set up reg table 2)
+  deg <- deg %>%
+    mutate(
+      reg =
+        case_when(
+          deg$logFC >= FC & deg$adj.P.Val <= p ~ "Sig Adj. P <0.05",
+          deg$logFC <= FC &
+            deg$adj.P.Val <= p ~ "Sig Adj. P <0.05",
+          deg$logFC >= FC & deg$P.Value <= p ~ "Sig P <0.05",
+          deg$logFC <= FC & deg$P.Value <= p ~ "Sig P <0.05",
+          abs(deg$logFC) <= FC &
+            deg$adj.P.Val >= p ~ "No Change",
+          abs(deg$logFC) <= FC &
+            deg$adj.P.Val <= p ~ "No Change",
+          abs(deg$logFC) > FC &
+            deg$adj.P.Val > p ~ "No Change"
+        )
+    ) %>%
+    mutate(reg =
+             factor(reg, levels =
+                      c(
+                        "Sig Adj. P <0.05", "Sig P <0.05", "No Change"
+                      )))
+  
+  #Define labels 3)
+  
+  if (is.null(lab_type)) {
+    #No entry for lab list, currently there's no default arg
+    gene_label <- c("")
+    lab_data <-
+      NULL #Empty dataframe, need to work out how not to error
+    warning("No genes highlighted")
+  } else if (lab_type == "sig") {
+    gene_label <- genes
+    lab_data <-
+      deg[(deg$reg == "Sig P <0.05")
+          & (deg$gene_name %in% genes), ]
+  }  else if (lab_type == "adj.sig") {
+    gene_label <- genes
+    lab_data <-
+      deg[(deg$reg == "Sig Adj. P <0.05")
+          & (deg$gene_name %in% genes), ]
+  } else if (lab_type == "ns") {
+    gene_label <- genes
+    lab_data <- deg[(deg$gene_name %in% genes), ]
+  }
+  else if (lab_type == "top") {
+    lab_data <- slice_min(deg, adj.P.Val, n = top)
+    gene_label <- lab_data$gene_name
+  }
+  
+  #Plot Volcano 4)
+  vol <-
+    deg %>% ggplot(aes(
+      x = logFC,
+      y = -log10(P.Value),
+      label = gene_name
+    )) +
+    geom_point(aes(color = P.Value, alpha = alpha)) +
+    labs(title = title) +
+    theme_minimal() + theme(legend.position = "none") +
+    geom_hline(yintercept = log_p,
+               linetype = 2.5,
+               alpha = 0.7) +
+    geom_hline(yintercept = log_adj,
+               linetype = 2.5,
+               alpha = 0.7) +
+    geom_label_repel(
+      data = lab_data,
+      size = 3.5,
+      direction = "both",
+      nudge_y = 1.6,
+      nudge_x = 0.1,
+      angle = 70,
+      vjust = 0,
+      segment.size = 0.5,
+      segment.color = "#331002",
+      fill = "#f7f7f5"
+    ) +
+    scale_color_gradientn(colours = colours,
+                          values = c(0, adj.p, p, 1))
+  return(vol)
+} 
+
+```
+
+#### Data Set up
+
+```{r}
+setwd("~/GWAS_22/gwas_final/eQTL")
+
+study <- c("/vast_tyg")
+time_point <- c("/D7")
+out_dir <- paste0(getwd(), study)
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+pheno_exprs <- read.csv(file = "~/RNA/oct/combat_vast_tyger_raw.csv")
+
+# 1) Filter dge data for time point -------------------------------------------
+
+table(pheno_exprs$time_point)
+
+# pheno_exprs <- pheno_exprs %>%
+  # dplyr::filter(time_point == "D7" |time_point == "Baseline" |time_point == "Baseline"
+
+# Gene expression data ---------------------------------------------------------
+
+pheno <- pheno_exprs %>% dplyr::select(!starts_with("ENS"))
+exprs <- pheno_exprs %>% dplyr::select(starts_with("ENS"))
+exprs <- as.data.frame(t(exprs))
+colnames(exprs) <- pheno$lab_id
+exprs$ensembl_gene_id <- rownames(exprs)
+exprs <- exprs[ ,!is.na(colnames(exprs))]
+
+# Immune genes (for vaccination study) 
+immune <- clean_names(read.csv(file = pathway)) %>% dplyr::rename(ensembl_gene_id = ensembl) %>% inner_join(genes, by = "ensembl_gene_id")
+# Filter for autsomes and immune dge samples
+immune <- immune %>%
+  filter(chromosome_name %in% (as.character(c(1:22)))) %>% inner_join(exprs, by = "ensembl_gene_id")
+exprs <- immune[,c(27,31:ncol(immune))] %>% filter(hgnc_symbol %in% qtls)
+
+```
+
+### 2) Differential gene expression analysis
+
+**Background**\
+Once our data is pre-processed and normalised, we can compare counts or gene expression between participants and different groups of interest.
+
+If we just wanted to look at normalised counts/gene expression between two participants we could make direct comparisons, with no further modelling required.
+
+However, if we want to make larger comparisons between groups of interest, i.e time points, or between vaccines, just comparing the mean expression of these two groups would be disingenuous, as it would not take into account other factors which influence the overall gene expression of that group.
+
+For example, comparing DGE between Vi-TCV and Vi-PS participants at D7; Vi-PS participants might have an older age, or more participants sequenced in a different batch which could affect mean expression values. By accounting for these factors as covariates in our model, we can more accurately estimate the mean gene expression for that group.
+
+These estimations are made using linear regression models.
+
+The next step is to calculate the fold change (Fc) in the average modelled gene expression between groups. E.g Fc between different time points, baseline and 7-days post-vac, or the difference between Vi-TCV gene expression at D7 and Vi-PS gene expression.
+
+**Analysis set up:**\
+The parameters we include in the model are specified within the *design matrix*, and the contrasts, or comparisons we would like to perform are specified within a *contrast matrix.*
+
+*Overall RNAseq workflow:*
+
+-   Design matrix formation -\> Limma voom (first time)
+
+-   duplicateCorrelation -\> Voom again (if data has repeated measures)
+
+-   lmFit --\> contrasts.fit --\> eBayes --\> TopTable --\> Volcano
+
+**Important Functions:**
+
+-   `lmFit` computes coefficients, residual variances and standard errors. For your linear model, the leading coefficients correspond to average log-expression values for different conditions
+
+-   `voom` Remove heteroskedasity in the data, - equalises variance. Necessary for RNA-seq data as it normalises the resiudals so they are no longer dependent on count size.
+
+-   `duplicateCorrelation` calculates the correlation between samples within your data, this correlation can then be included in the linear model as a blocking factor
+
+-   `contrasts.fit` Re-orientates the fitted model object from the coefficients of the original design matrix to any set of contrasts of the original coefficients. The coefficients, unscaled standard deviations and correlation matrix are re-calculated in terms of the contrasts.
+
+-   `eBayes` computes t-statistics and p-values from the coefficients and standard errors. Running eBayes before contrast.fit will give non-nonsensical results in terms of obtained p-values, as no comparisons have been made
+
+#### Design Matricies
+
+The *design matrix* contains the model coefficients (explanatory variables) we specify per each sample, and extracts this information from the corresponding metadata matrix.
+
+`model.matrix(~ time + diagnosis + vax + age + sequence_pool, data = data$metadata)`
+
+Rows are associated with samples and columns are associated with model coefficients. These coefficients are then supplied to the corresponding linear model to estimate gene expression.
+
+Categorical variable [[example:\\\\](example:){.uri}](%5Bexample:%5D(example:)%7B.uri%7D){.uri} If a sample is TD, a = 1, if it is not a TD sample, a = 0.\
+The zeros tell the model to skip estimating the model parameter for that sample. <https://www.youtube.com/watch?v=Hrr2anyK_5s&ab_channel=StatQuestwithJoshStarmer>
+
+**Matrix formatting**
+
+The design matrix is the **same m dimension** as your count and metadata matrices.\
+Consequently when modelling our response data, y (DGE count data), model parameters can be estimated from the coefficients by using matrix algebra. Computationally efficient :)\
+See theory section on linear models for more details:\
+<https://f1000research.com/articles/9-1444>
+
+Therefore, if you subset your DGE data beforehand, e.g delete count data from the placebo group - you *must* ensure all the norm factor/pheno data is also subsetted. If your design matrix has different dimensions to the related DGE data - the limma functions will not work.
+
+Reasons for subsetting I have found were due to linear dependencies or Nas (explained later). However, generally it is best to try keep all your samples. Relevant comparisons within the design matrix are specified later using contrasts
+
+**Covariates:**
+
+At the start of your analysis, you might have an idea of some comparisons you would like to make, let's say the difference between vaccinated and non-vaccinated samples. (ignore time points for now)
+
+We want to model the average difference (fold change) in gene expression between these two groups. E.g `lm(exprs_data ~ vaccine_group)`
+
+However, if one group had for example an older average participant age, or a technical batch differences that would skew the results, we want to include these factors as covariates in our model as such: `lm(exprs_data ~ vaccine_group + age + sex)`
+
+When deciding on what coefficients to include in the design matrix, and thus model, we can test for significant effects by examining the MDS plots. Variables that result in clustering/separation of data should therefore be included if we are measuring the overall gene expression.
+
+**Intercept terms**
+
+For a single explanatory variable a design matrix can be coded by `model.matrix(~variable)` to include an intercept term, or by `model.matrix(~0 + variable)` to exclude the intercept term.\
+If our variable is categorical, then design models with and without the intercept term are equivalent, but if variable is a numerical covariate, then the choice of model type matters
+
+-   If we have any numeric (non-catgorical) variables in our model, it is best to include a y intercept, as the model of gene expression may not start from zero
+-   If we just have categorical variables, e.g we are comparing gene expression between two treatment groups then we don't need to include the intercept and it can be excluded by `model.matrix(~0+ variable)`
+
+**Design matrix data prep**
+
+1)  Check metadata variable names/data types for design `clean_names()`
+    -   Design matrix can't have duplicate column names, weird symbols etc
+    -   Check numeric vars are recoded to factors if necessary
+2)  Check for NA values
+    -   Samples with Na values (in vars specified by design) are automatically removed from matrix
+    -   Causes trouble downstream as design/sample/contrast matrix will have uneven dims
+    -   Check for na's using `is.na` loop, poss recode to a dummy value if we need to keep them (they can be filtered out by the contrast selection later, so it's more of a code issue at this point)
+3)  Check for linear dependencies/rank
+    -   If some model parameters are dependent on another then these will mess up the linear model
+4)  Remove null variables
+    -   Vars with all 0s or NAs add nothing to the model so can be removed
+
+```{r Design Matrix, results='hide'}
+#pData <- pheno
+#str(pData)
+
+#Change sequence pool to factor
+vast_tyger$samples$batch_pool <- as.factor(vast_tyger$samples$batch_pool)
+vast_tyger$samples$time_point <- as.factor(vast_tyger$samples$time_point)
+
+#Check for Nas
+test <-
+  vast_tyger$samples[sapply(vast_tyger$samples, function(x)
+    sum(is.na(x))), ]
+
+#samples have data for the design categories, however are missing levels of time factor which results in them being ommited from model.matrix - it was the vaccine rip
+
+#Model design matrix
+vast_tyger$samples<- vast_tyger$samples %>%
+  mutate(vax_status = ifelse(chall_vax %in% c("4", "5"), "vax", "no_vax"))
+
+design <-
+  model.matrix( ~ 0 + time_point + vax_status + sex + age_at_do, data = vast_tyger$samples)
+#Leave out diagnosis for now
+
+# 1) Test for linear dependencies ####
+ncol(design)
+qr(design)$rank # Unequal ncol-rank = linear dependencies present
+
+# 2) Find linear dependent cols
+rankifremoved <-
+  sapply(1:ncol(design), function (x)
+    qr(design[, -x])$rank) #function calculates the rank of the matrix - each column
+#Column (design factor) if removed, that result in the highest rank are the linearly dependent ones (since removing those does not decrease rank, while removing a linearly independent column does).
+which(rankifremoved != max(rankifremoved))
+
+# 3) Remove Problem variables
+#Remove null variables, i.e = all 0s or NAs (Control)
+colSums(design) == 0
+
+#- subset data using col indicies found by 'which'- finds cols which (=) grepl condition (a regex search that outputs logical vector)
+test <- design[, -(which(colSums(design) == 0))]
+
+# A column only has observations in x rows
+# These observations do not occur in other rows (from the same colname str_start as otherwise will be found in the covar cols)
+# Then remove these observations
+# sum(design$time)
+
+#Re-check rank/ncol
+ncol(design)
+qr(design)$rank
+
+#Tidy new design colnames
+colnames(design) <- gsub("study_arm", "", colnames(design))
+colnames(design) <- gsub("time_point3", "", colnames(design))
+colnames(design) <- gsub("\\+", "plus", colnames(design))
+
+
+# Diagnosis design ------------
+design <-
+  model.matrix( ~ 0 + time_point + vax_status + diagnosis + sex + age_at_do, data = vast_tyger$samples)
+#Leave out diagnosis for now
+
+# 1) Test for linear dependencies ####
+ncol(design)
+qr(design)$rank 
+
+```
+
+*Linear dependencies notes*\
+- The rank of the matrix is the total number of independent columns/vectors in the matrix. - So if our matrix rank is smaller than the number of columns, then there must be linear dependencies, i.e that vector can be made up by either a copy of or multiplying another one of the vectors. - A vector of all zeros will also count as a dependent vector, therefore need to remove these (as well as it being redundant for the model anyways)
+
+-   VAST Notes: My bet is on time_point and study arm, as the control group wont have vac time points, therefore should nest these factors? Update - removed control group from orignal data and design, also time_point D14 when checking using interaction time\*vaccine, only had Vi-PS samples. So if you were to include D14 as a time point in the model you would also just be measuring the effects of Vi-PS, therefore for now when looking at both vaccine groups, excluding D14 from analysis
+
+### Limma Voom
+
+Limma uses linear modelling on log-CPM values to model gene expression from RNAseq data. An assumption of the model is that the the error's residuals/variance is normally distributed.
+
+However, it has been established that for RNAseq data, the relationship between the number of counts of a given gene, and the variance of those counts is non-linear.\
+Because the variance is unequal across a range of values, i.e the data is heteroskedastic, we have to normalise this unequal variance.
+
+The voom function normalises/adjusts variance so it is no longer dependent on count size, and we can model gene expression accurately in future steps.
+
+As the voom function is normalising the residuals around a fitted model, we need to input the design matrix as described in section 2, which specifies model variables, to perform voom appropriately.
+
+```{r Voom 1}
+#Plots mean count size (x) against variance (y)
+#Lower counts tend to have lower variance
+#Therefore voom normalises - flattens this trend
+#Variances are calculated by fitting a linear model to the data provided by the design matrix
+png(paste(plot_dir, "voom1.png", sep = ""))
+v <- voom(data, exp_design, plot = TRUE)
+
+dev.off()
+#more variance I think in post-chall samples
+
+```
+
+Typically Voom plot shows higher variance for lower counts. If filtering was not performed properly, a drop in variance levels can be observed at the low end of the expression scale due to very small counts. Experiments with high biological variation tend to result in flatter trends, lower biological variation tend to have sharper trends.
+
+When modelling gene expression between conditions using design/contrast matrices, we can now use our corrected data in the Voom object (S4), and visually check that we have removed the variance trend with log expression.
+
+### Blocking factors
+
+Gene expression across mutliple time points will typically correlate with some degree, the participant it was measured in repeatedly.
+
+Account for this effect by estimating the correlation of the 'participant' variable in our data using duplicateCorrelation. The cor value is then used as a 'blocking factor' in the final linear model.
+
+```{r corfit}
+#Estimate the correlation between measurements made on the same subject:
+corfit <-
+  duplicateCorrelation(v, design = exp_design, block = sub$samples$lab_id)
+
+corfit$consensus #0.32
+
+#Voom 2 ####
+# Apply voom again on original data (with the block and correlation parameters this time)
+png(file = paste(plot_dir, "voom2.png", sep = ""))
+
+v2 <- voom(
+  vast_tyger$counts,
+  design,
+  block = vast_tyger$samples$lab_id,
+  correlation = corfit$consensus,
+  plot = TRUE
+)
+dev.off()
+
+#Lmfit 1###
+fit <-
+  lmFit(v2,
+        design,
+        block = vast_tyger$samples$lab_id,
+        correlation = corfit$consensus,
+        robust = TRUE)
+```
+
+```{r Save / load limma voom data}
+#save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
+# load(file = "~/RNA/diff_expr_results/VAST_RNAseq.RData")
+#save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq_chall.RData")
+
+```
+
+### Contrast Matrices
+
+Used in conjunction with a design matrix to calculate specific values of interest between estimated parameters.\
+The matrix is set up as so that rows are associated with model parameters and columns indicate whether that data is to be used in the comparison
+
+```{r All contrast matricies}
+#Use contrasts_2_lm function to model designated comparisons between control/baseline
+#Also outputs toptable results
+
+#Comparing D1, D7 and 28 days post-vac with baseline
+#results <- contrast_2_lm(group = c("V7", "V1", "D0"), control = c("V0"),efit=fit, des_mat = design)
+#results <- contrast_2_lm(group = c("V7", "V1", "D0"), control = c("V0"),efit=fit, des_mat = design)
+#all times
+groups <- colnames(design[,1:5])
+
+results <-
+  contrast_2_lm(
+    group = groups,
+    efit = fit,
+    des_mat = design
+  ) 
+
+
+# Just day 7
+
+exp_design <-
+  model.matrix( ~ 0 + vax_status + diagnosis + sex + age_at_do, data = sub$samples)
+exp_design <- exp_design[,-1]
+# redo voom
+#exp_design <- model.matrix(~0 + time_point + vax_status + diagnosis + sex + age_at_do, vast_tyger$samples)
+?makeContrasts
+contrast_matrix <- makeContrasts(diagnosisTD, levels = design)
+
+ebayesfit <- eBayes(contrasts.fit(lmFit(v, design = design), contrast_matrix))
+
+top <- topTable(ebayesfit, number = Inf)
+
+# groups <- colnames(design[, grep("time0v", colnames(design))])
+
+cm <- results$contrasts
+fit2 <- results$fit2
+toptables <- results$top_results
+
+# Add gene names
+# toptables <- lapply(toptables, mutate(ensembl_gene_id = rownames(x)))
+plotSA(ebayesfit) #check variance post-voom
+
+```
+
+##### Top tables
+
+```{r top}
+# Saved in gwas_final/eqtl
+# V7_vs_V0 <- toptables$time_pointD7_vs_time_pointBaseline
+# V7_vs_V0 <- inner_join(V7_vs_V0, tyger$gene, by = "gene_id")
+
+
+D7_vs_D0 <- toptables$time_pointD7_vs_time_pointBaseline
+D7_vs_D0$gene_id <- rownames(D7_vs_D0)
+# Get gene ids
+D7_vs_D0 <- inner_join(D7_vs_D0, tyger$genes, by = "gene_id")
+
+
+h12_vs_V0 <- toptables$time_pointBaseline_vs_time_pointD0.12h
+h12_vs_V0$gene_id <- rownames(h12_vs_V0)
+h12_vs_V0 <- inner_join(h12_vs_V0, tyger$genes, by = "gene_id")
+
+write.csv(D7_vs_D0, file = "D7_D0_VT.csv", row.names = F)
+
+write.csv(h12_vs_V0, file = "h12_D0_VT.csv", row.names = F)
+
+
+# TPM
+vast_tyger$genes$gene_id <- rownames(vast_tyger$genes)
+vast_tyger$genes <- inner_join(vast_tyger$genes, tyger$gene, by = "gene_id")
+
+tpm3 <- function(counts,len) {
+  x <- counts/len
+  return(t(t(x)*1e6/colSums(x)))
+}
+
+vast_tyger$tpm <- tpm3(vast_tyger$counts, vast_tyger$genes$transcript_length)
+D7_D0 <- V7_vs_V0
+h12_D0 <- h12_vs_V0
+
+vast_tyger$top_tables <- list(D7_D0, h12_D0)
+names(vast_tyger$top_tables) <- c("D7_D0", "h12_D0")
+
+saveRDS(vast_tyger, file = "vast_tyger.Rds")
+save.image(file = "~/RNA/oct/vast_tyger/vast_tyg_dge.RData")
+load(file = "~/RNA/oct/vast_tyger/vast_tyg_dge.RData")
+
+
+
+```
+
+### 3) Data visualisation
+
+#### Plot Pipeline
+
+-   Input toptable results file
+-   Specify directories + plot names
+-   Option to modify highlighted genes/sig levels
+
+```{r Volcano Plots}
+
+#Final vols ####
+
+# UPDATE file dirs and data
+# system("mkdir ~/GWAS_22/new_gwas/Plots/DEG/volcanos/h12")
+plot_dir <- paste0(plot_dir, "volcanos/")
+plot_title <- c("7-days post-challenge")
+
+# Add gene info
+deg <- top
+deg$gene_id <- rownames(deg)
+deg <- inner_join(deg, tyger$genes, by = "gene_id")
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# UPDATE
+# Modify gene names
+deg$gene_name <- str_replace(deg$gene_name, "TNFSF13B", "BAFF")
+deg$gene_name <- str_replace(deg$gene_name, "TNFSF13", "APRIL")
+
+qtls <- c("F2R", "F2RL1","MPL","ITGB3","MMRN1","GP9","GP1BA", "CD9", "THBS1", "ANGPT1","PTGS1")
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+plot_vol(deg,
+           lab = 'sig',
+           genes = qtls,
+           title = plot_title)
+
+
+plot_vol(h12_vs_V0,
+           lab = 'sig',
+           genes = qtls,
+           title = plot_title)
+
+plot_vol(h12_vs_V0,
+           lab = 'top',
+           genes = qtls,
+           title = plot_title)
+
+
+#Save plots ####
+png(file = paste(plot_dir, "sig_qtl.png", sep = ""))
+plot_vol(deg,
+           lab = 'adj.sig',
+           genes = qtls,
+           title = plot_title)
+dev.off()
+
+png(file = paste(plot_dir, "top_day7.png", sep = ""))
+plot_vol(deg,
+           lab = 'top',
+           genes = qtls,
+           title = plot_title)
+dev.off()
+
+png(file = paste(plot_dir, "top_12h.png", sep = ""))
+plot_vol(h12_vs_V0,
+           lab = 'top',
+           genes = qtls,
+           title = "12 hours post-challenge")
+dev.off()
+
+```
+
+*Todo* check labels in plot_vol function code
+
+#### Results:
+
+### Mixed Vax comparison
+
+*D1 notes*
+
+-   FcRs 2a 1a sig upreg
+-   Neut genes sig up reg
+
+*D7 notes*
+
+-   No sig change in FcRs
+-   BAFF IL1B are slighly down reg
+-   Quite a skewed volcano
+
+*D28 notes*
+
+-   Most genes return to baseline/not many sig genes
+-   No sig overexpression
+-   To be expected 1-month post-vac
+-   Relabel vol with sig genes
+
+*12 Post-chall*
+
+-   Need to add back in challenge participants and double check linear dependencies, maybe remove pre-chall time points
+
+### 4) FcR comparisons
+
+*Aims*
+
+-   Compare post-vac FcR expression between diagnosed and non-diagnosed pre-vaccination
+-   do on global and individual gene level expression scale
+-   Matrix eQTL expression
+
+Did nTD participants also have less APRIL/BAFF expression? If I have the model without the intercept that will be comparing each group to the mean of that cohort?
+
+```{r vax td comparisons}
+load(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
+
+pheno$time <- as.factor(pheno$time_point3)
+tableexpsign <-
+  model.matrix( ~ Time + Array_experiment + age + Sex + StudyArm, data = tableexpsign_12h)
+
+#Don't need to filter data of time point as contrast matrix will just put in a 0 if I dont specify it
+
+#design#
+
+Group <- factor(paste(Time_point, Treatment, sep = "."))
+
+
+design <- model.matrix( ~ 0 + Group + Individual)
+
+vax_time <-
+  paste0(samples$study_arm, samples$time_point3) #compare D0_TCV  D0_ViPS
+vax_diag <-
+  paste0(samples$study_arm, samples$diagnosis) #compare D0_TCV  D0_ViPS
+time_diag <- paste0(samples$time_point3, samples$diagnosis)
+
+#design <- model.matrix(~0+ time_point3 + study_arm + diagnosis + sex + sequence_pool, data = pheno)
+
+
+design <-
+  model.matrix( ~ 0 + time_diag + study_arm + diagnosis + sex + sequence_pool,
+                data = pheno)
+
+colnames(design) <- gsub("time_diag", "", colnames(design))
+colnames(design) <- gsub("study_arm", "", colnames(design))
+colnames(design) <- gsub("time_point3", "", colnames(design))
+colnames(design) <- gsub("D0\\+", "", colnames(design))
+colnames(design) <- gsub("diagnosis", "diag_", colnames(design))
+colnames(design) <- gsub("12h", "h12", colnames(design))
+
+design <- design[, -c(grep("UNKNOWN", colnames(design)))]
+design <-
+  design[, -c(14, 17)] #-control  #-dag_TD
+
+
+#compare Time_0 - Time_0.5 _TD
+#contrast_matrix <- makeContrasts('h12TD-h12nTD',levels = design)
+
+#fit 1
+
+results <-
+  contrast_2_lm(group = c("V1TD", "V1nTD"),
+                efit = fit,
+                des_mat = design)
+
+cm <- results$contrasts
+fit2 <- results$fit2
+toptables <- results$top_results
+
+
+```
+
+Manual attempts
+
+-   calculate LogFC D0-D7 for both TD and nTD
+-   repeat for nested D0-D7 comparing Vi-PS, ViTCV
+-   get gene of interest eset data \> plot
+
+```{r}
+
+mean(eset["g1", labs %in% c("a", "b")]) - mean(eset["g1", labs %in% c("c", "d")])
+[1] 0.3015693
+
+# first gene - AveExpr
+mean(eset["g1", ])
+
+
+#need limma for all the modelling though
+Fc_interest2 %>% filter(Diagnosis == "TD") %>%
+  ggplot(aes(
+    x = Time,
+    y = Exprs,
+    group = Time,
+    colour = Diagnosis
+  )) + geom_boxplot(outlier.shape = NA) + scale_x_continuous(limits = c(-0.5, 16.5), breaks = seq(0, 28, 2)) + facet_wrap( ~
+                                                                                                                             Fc_Receptor) +
+  labs(y = "Normalised Gene Expression", x = "Days Post-Challenge", title = "FcR Expression in TD Participants") +
+  scale_colour_manual(values = c("sandybrown")) + theme(legend.position = "none")
+
+
+library(splines)
+X <- ns(samples$time, df = 5)
+Then fit separate curves for the control and treatment groups:Group <-
+  factor(targets$Group)
+design <- model.matrix( ~ Group * X)
+fit <- lmFit(y, design)
+fit <- eBayes(fit)
+
+```
