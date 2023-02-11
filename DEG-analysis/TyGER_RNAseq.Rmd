@@ -7,7 +7,7 @@ output: html_document
 
 ```{r Rmd setup}
 knitr::opts_chunk$set(echo = TRUE, eval = TRUE, error = TRUE)
-knitr::opts_knit$set(root.dir = '/home/mari/RNA') #Permanently sets wd for Rmd
+knitr::opts_knit$set(root.dir = '/home/mari/RNA/oct') #Permanently sets wd for Rmd
 ```
 
 ### Aims:
@@ -56,16 +56,16 @@ Materials:
 ### R set up and Functions
 
 ```{r Set Directories, warning=FALSE, message=FALSE, error = FALSE}
-setwd("~/RNA") #where data is saved
-plot_dir <- c("~/RNA/oct/plots") #where to save output plots
+setwd("~/RNA/oct") #where data is saved
+plot_dir <- c("~/RNA/oct/plots/") #where to save output plots
 
 #load packages #
 library(dplyr)
-library(data.table)
 library(ggplot2)
 library(ggrepel) 
 library(tidyr)
 library(tidylog)
+library(data.table)
 library(limma)
 library(stringi)
 library(janitor)
@@ -77,7 +77,13 @@ library(DESeq2)
 library(Glimma)
 library(RColorBrewer)
 
-load(file = "~/RNA/diff_expr_results/VAST_RNAseq.RData")
+# load(file = "~/RNA/diff_expr_results/VAST_RNAseq.RData")
+#load(file = "VAST_Tyger_oct.RData")
+
+# fully processed vast data
+load(file = "VAST_deg_nov10.RData")
+
+
 ```
 
 ```{r functions}
@@ -321,7 +327,6 @@ plot_vol <- function(deg,
 #load( "/home/mari/RNA/Daniel/Filter2_VAST_STAR_HTSeq_gene_meta_autosomes_mismatch_corrected_demo_minus_rRNA_globins_autosomes_2021-04-27.R")
 load(file = "~/RNA/TyGER_RNAseq.R")
 data <- TyGER_combined_data #VAST_autosomes #RNAseq data set
-
 rm(TyGER_combined_data)
 #Clean names using janitor package
 str(data$samples)
@@ -344,6 +349,34 @@ dim(counts)
 data <- DGEList(counts = counts,
                 genes = genes,
                 samples = samples)
+```
+
+```{r setup-new}
+data <- vast
+samples <- data$samples
+table(data$samples$time_point3)
+samples$time_point3 <- as.character(samples$time_point3)
+samples$study_arm <- as.character(samples$study_arm)
+
+samples <- samples %>%
+  mutate(time_point = ifelse(time_point3 == "D0" & study_arm %in% c("ViTCV", "ViPS"), "V28", time_point3))
+
+# Make new baseline time point, V0 for vaccinees and D0 for challenge
+samples <- samples %>%
+  mutate(time_point = ifelse(time_point %in% c("V0","D0"), "Baseline", time_point)) 
+table(samples$time_point)
+# Day 7
+samples <- samples %>% 
+  mutate(time_point = ifelse(time %in% c(5:9) & (time_point3 == "TD"), "D7", time_point))
+samples <- samples %>%
+  mutate(time_point = ifelse(time_point == "D0+12h", "D0.12h", time_point))
+
+data$samples <- samples
+idx <- (data$samples$time_point %in% c("Baseline","D0.12h", "D7") & data$samples$diagnosis %in% c("TD", "nTD"))
+
+sub <- data[,idx]
+dim(sub)
+data <- sub
 
 ```
 
@@ -369,21 +402,19 @@ c(L, M)
 
 ```{r Remove Lowly expressed genes, warning=FALSE}
 #Filter low values using edgeR algorithm
-keep.exprs <- filterByExpr(data$counts)
+keep.exprs <- filterByExpr(data)
 # Warning - all samples appear to belong to the same group
 
 data2 <- data[keep.exprs, keep.lib.sizes=FALSE] #subset og data
-dim(data)
+dim(data2)
 
-save.image(file = "TyGER_norm.RData")
+#save.image(file = "TyGER_norm.RData")
 
 ```
 
 Visualise the frequency of counts across study before and after filtering
 
 ```{r Visualise raw and filtered count data, warning=FALSE}
-
-plot_dir <- paste(getwd(),"plots/tyger/", sep = "/")
 
 lcpm.cutoff <- log2(10/M + 2/L)
 nsamples <- ncol(data) #521/514
@@ -417,6 +448,7 @@ rm(data2)
 #Normalise data ###
 data <- calcNormFactors(data, method = "TMM")#Normalises count data via TMM scale
 
+
 ```
 
 ### MDS plots
@@ -430,16 +462,17 @@ data <- calcNormFactors(data, method = "TMM")#Normalises count data via TMM scal
 
 ```{r MDS plot}
 #Sequencing lane check
-group = as.factor(data$samples$visit)
+var <- c("vast")
+library(ggplot2)
+group = as.factor(data$samples$batch)
 #Set up group to plot/colours
 lcpm <- cpm(data, log = TRUE)
 col.group <- group
-levels(col.group) <- scalebrewer.pal(nlevels(col.group), "Accent")
 levels(col.group) <- brewer.pal(nlevels(col.group), "Accent")
 col.group <- as.character(col.group)
 
 #Plot MDS
-png(paste(plot_dir, "visit.png", sep = ""))
+png(paste(plot_dir, "batch.png", sep = ""))
 plotMDS(lcpm, labels = group, col = visit)
 title(main = "Visit MDS")
 dev.off()
@@ -453,7 +486,7 @@ dev.off()
 
 -   e.g `limma::removeBatchEffect(cpm, data$metadata$sequence_pool)`
 
-- But for DEG analysis just include sequencing_pool as a co-variate in the model
+-   But for DEG analysis just include sequencing_pool as a co-variate in the model
 
 ```{r Time point MDS, message=FALSE}
 #Time point MDS
@@ -581,6 +614,33 @@ If our variable is categorical, then design models with and without the intercep
     -   Vars with all 0s or NAs add nothing to the model so can be removed
 
 ```{r Design Matrix, results='hide'}
+
+# Matrix set up ----------------------------------------------------------------
+
+data$samples <- droplevels(data$samples)
+data$samples$sequence_pool <- as.factor(data$samples$sequence_pool)
+# merged design
+data$samples$group <- str_c(data$samples$diagnosis, data$samples$time_point, sep = "_")
+table(data$samples$group)
+data$samples$group <- as.factor(data$samples$group)
+
+design <-
+  model.matrix(~0 +group + study_arm + age_at_do +sex +sequence_pool, data = data$samples)
+
+#Tidy new design colnames
+colnames(design) <- gsub("study_arm", "", colnames(design))
+colnames(design) <- gsub("diagnosis", "", colnames(design))
+colnames(design) <- gsub("time_point", "", colnames(design))
+colnames(design) <- gsub("sequence_pool", "batch_", colnames(design))
+colnames(design) <- gsub("group", "", colnames(design))
+
+ncol(design)
+qr(design)$rank
+backup <- design
+
+```
+```{r ld-na-checks}
+
 pData <- data$samples
 #str(pData)
 #Change sequence pool to factor
@@ -592,11 +652,6 @@ test <-
   data$samples[sapply(data$samples, function(x)
     sum(is.na(x))), ]
 #samples have data for the design categories, however are missing levels of time factor which results in them being ommited from model.matrix - it was the vaccine rip
-
-#Model design matrix
-design <-
-  model.matrix( ~ 0 + time + study_arm + sex + sequence_pool, data = data$samples)
-#Leave out diagnosis for now
 
 # 1) Test for linear dependencies ####
 ncol(design)
@@ -616,6 +671,7 @@ colSums(design) == 0
 
 #- subset data using col indicies found by 'which'- finds cols which (=) grepl condition (a regex search that outputs logical vector)
 test <- design[, -(which(colSums(design) == 0))]
+design <- design[,-1]
 
 # A column only has observations in x rows
 # These observations do not occur in other rows (from the same colname str_start as otherwise will be found in the covar cols)
@@ -627,12 +683,8 @@ design <- design[, -c(12)] #Just chall also
 #Re-check rank/ncol
 ncol(design)
 qr(design)$rank
-
-#Tidy new design colnames
-colnames(design) <- gsub("study_arm", "", colnames(design))
-colnames(design) <- gsub("time_point3", "", colnames(design))
-colnames(design) <- gsub("\\+", "plus", colnames(design))
 ```
+
 
 *Linear dependencies notes*\
 - The rank of the matrix is the total number of independent columns/vectors in the matrix. - So if our matrix rank is smaller than the number of columns, then there must be linear dependencies, i.e that vector can be made up by either a copy of or multiplying another one of the vectors. - A vector of all zeros will also count as a dependent vector, therefore need to remove these (as well as it being redundant for the model anyways)
@@ -655,7 +707,7 @@ As the voom function is normalising the residuals around a fitted model, we need
 #Lower counts tend to have lower variance
 #Therefore voom normalises - flattens this trend
 #Variances are calculated by fitting a linear model to the data provided by the design matrix
-pdf(paste(plot_dir, "voom1.pdf", sep = ""))
+pdf(paste(plot_dir, "voom_1.pdf", sep = ""))
 v <- voom(data, design, plot = TRUE)
 dev.off()
 #more variance I think in post-chall samples
@@ -676,11 +728,13 @@ Account for this effect by estimating the correlation of the 'participant' varia
 #Estimate the correlation between measurements made on the same subject:
 corfit <-
   duplicateCorrelation(v, design = design, block = data$samples$lab_id)
+
 corfit$consensus #0.32
 
 #Voom 2 ####
 # Apply voom again on original data (with the block and correlation parameters this time)
 pdf(file = paste(plot_dir, "voom_2.pdf", sep = ""))
+
 v2 <- voom(
   data,
   design,
@@ -688,6 +742,7 @@ v2 <- voom(
   correlation = corfit$consensus,
   plot = TRUE
 )
+
 dev.off()
 
 #y, design, block = targets$Block, correlation = corfit$consensus)
@@ -701,9 +756,10 @@ fit <-
 ```
 
 ```{r Save / load limma voom data}
-#save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
-load(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
+# save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
+# load(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
 #save.image(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq_chall.RData")
+save.image(file = "VAST_deg_nov10.RData")
 
 ```
 
@@ -712,7 +768,36 @@ load(file = "~/RNA/Daniel/diff_expr_results/VAST_RNAseq.RData")
 Used in conjunction with a design matrix to calculate specific values of interest between estimated parameters.\
 The matrix is set up as so that rows are associated with model parameters and columns indicate whether that data is to be used in the comparison
 
-```{r All contrast matricies}
+```{r nested-contrasts}
+# Manual contrasts -----------
+
+contrasts <- makeContrasts(
+  nTD_D0.12h_vs_D0 = nTD_D0.12h - nTD_Baseline,
+  TD_D0.12h_vs_D0 = TD_D0.12h - TD_Baseline,
+  TD_v_nTD_D0 = (TD_D0.12h - TD_Baseline) - (nTD_D0.12h - nTD_Baseline),
+  nTD_D7_vs_D0 = nTD_D7 - nTD_Baseline,
+  TD_D7_vs_D0 = TD_D7 - TD_Baseline,
+  TD_v_nTD_D7 = (TD_D7 - TD_Baseline) - (nTD_D7 - nTD_Baseline),
+  levels = colnames(design)
+) 
+
+fit2 <- contrasts.fit(fit, contrasts)
+fit2 <- eBayes(fit2)
+h12_D0_nTD <- topTable(fit2, coef = 1, number = Inf)
+h12_D0_TD <- topTable(fit2, coef = 2, number = Inf)
+h12_TDnTD <- topTable(fit2, coef = 3, number = Inf)
+D7_TDnTD <- topTable(fit2, coef = 6, number = Inf)
+TD_vs_D0 <- topTable(fit2, coef = 5, number = Inf)
+D7_vs_D0 <- topTable(fit2, coef = 4, number = Inf) #nTD
+
+# 3rd and six coef = mean diffs between diagnosis groups
+
+plotSA(fit2) #check variance post-voom
+
+```
+
+
+```{r All-contrast matricies}
 #Use contrasts_2_lm function to model designated comparisons between control/baseline
 #Also outputs toptable results
 
@@ -729,12 +814,11 @@ results <-
 groups <- colnames(design[, grep("time", colnames(design))])
 groups <- colnames(design[, grep("time0v", colnames(design))])
 
-
 cm <- results$contrasts
 fit2 <- results$fit2
 toptables <- results$top_results
 
-plotSA(fit2) #check variance post-voom
+
 ```
 
 ### 3) Data visualisation
@@ -746,70 +830,123 @@ plotSA(fit2) #check variance post-voom
 -   Option to modify highlighted genes/sig levels
 
 ```{r Volcano Plots}
-
 #Final vols ####
-
 # UPDATE file dirs and data
-# system("mkdir ~/GWAS_22/new_gwas/Plots/DEG/volcanos/h12")
-plot_dir <- c("~/GWAS_22/new_gwas/Plots/DEG/volcanos/V1/")
-plot_title <- c("24h Post-vaccination")
-factor <- c("Diagnosis")
+plot_dir <- paste0(plot_dir, "/volcanos/")
+plot_title <- c("TD vs nTD - 24h Post-vaccination")
 
-deg <- toptables$V1nTD_vs_V1TD
+# Add gene info if tyger
+#deg <- D7_TDnTD
+#deg$gene_id <- rownames(deg)
+#deg <- inner_join(deg, tyger$genes, by = "gene_id")
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # UPDATE
 # Modify gene names
-deg$gene_name <- str_replace(deg$gene_name, "TNFSF13B", "BAFF")
-deg$gene_name <- str_replace(deg$gene_name, "TNFSF13", "APRIL")
-genes_neut <- c("APRIL", "BAFF", "IL1B")
-genes_fc <-
-  c("FCGR3A",
-    "FCGR3C",
-    "FCAR",
-    "FCGR1B",
-    "FCGR2A",
-    "FCGR2B",
-    "FCGR2C",
-    "FCGR1A")
+# "GP9", "ITGB3" # "THBS1 # "MMRN1" # "MPL" # "GP1BA" # "CD9" # ,"TBCA"
+
+qtls <- c("F2R", "F2RL1", "ANGPT1","PTGS1", "AGGF1", "TRIM69", "B2M")
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+deg <- TD_vs_D0
+deg <- D7_vs_D0
 
-top <- plot_vol(deg, lab = 'top', title = plot_title)
-neut <-
-  plot_vol(deg,
-           lab = 'sig',
-           genes = genes_neut,
-           title = plot_title)
-fc <-
-  plot_vol(deg,
-           lab = 'sig',
-           genes = genes_fc,
-           title = plot_title)
-ns <- plot_vol(deg,
-               lab = 'ns',
-               genes = genes_fc,
-               title = plot_title)
+deg <- D7_TDnTD
+deg <- h12_TDnTD
 
+deg <- h12_D0_TD 
+deg <- h12_D0_nTD
+
+p <- plot_vol(deg,
+           lab = 'ns',
+           genes = qtls,
+           title = "12h post-challenge - nTD")
+p
 
 #Save plots ####
-pdf(file = paste(plot_dir, factor, "sig_neut.pdf", sep = ""))
-neut
+png(file = paste(plot_dir,"12h_nTD.png", sep = ""))
+p
 dev.off()
 
-pdf(file = paste(plot_dir, factor, "sig_fc.pdf", sep = ""))
-fc
-dev.off()
-
-pdf(file = paste(plot_dir, factor, "ns_fc.pdf", sep = ""))
-ns
-dev.off()
-ns
-
-pdf(file = paste(plot_dir, factor, "topgenes.pdf", sep = ""))
-top
-dev.off()
-fc
 ```
+Calculate FC by participant
+```{r FC}
+
+load(file = "~/RNA/oct/VAST_deg_nov10.RData")
+
+# subset genes and baseline participants
+
+idx <- data$genes$gene_name %in% c("F2R")
+sub <- data[idx,]
+dim(sub)
+
+idx <- (sub$samples$time_point == "Baseline")
+base <- sub[,idx]
+dim(base)
+
+idx <- (sub$samples$time_point == "D7")
+D7 <- sub[,idx]
+dim(D7)
+
+# make pheno exprs
+
+exprs <- as.data.frame(t(base$counts))
+  names(exprs) <- base$genes$gene_name
+  pheno <- as.data.frame(base$samples)
+  pheno_exprs <- bind_cols(pheno, exprs)
+  
+ exprs2 <- as.data.frame(t(D7$counts))
+  names(exprs2) <- D7$genes$gene_name
+  pheno2 <- as.data.frame(D7$samples)
+  pheno_exprs2 <- bind_cols(pheno2, exprs2)
+  
+merge <- inner_join(pheno_exprs2, pheno_exprs, by = "lab_id") # y is baseline val
+merge <- select(merge, lab_id, time_point3.x, time_point.x, study_arm.x, diagnosis.x,F2R.y, F2R.x)
+merge <- merge %>%
+  group_by(lab_id) %>%
+  mutate(FC =
+           (F2R.x - F2R.y)
+         / F2R.x)
+
+options(scipen = 999)
+
+merge %>% ggplot(aes(x = diagnosis.x, y = FC)) + geom_boxplot(outlier.shape = NA)
+
+
+load(file = "~/GWAS_22/gwas_final/eQTL/chr5_platelets.RData")
+test <- snp_pheno %>% select(lab_id, F2R)
+merge2 <- inner_join(snp_pheno, merge, by = "lab_id")
+
+merge %>% ggplot(aes(x = diagnosis.x, y = FC)) + geom_boxplot(outlier.shape = NA)
+
+merge2 %>% filter(!is.na(Chr5_77685638_A_G)) %>%
+    ggplot(aes(x = Chr5_77685638_A_G, y = FC, fill = Chr5_77685638_A_G)) +
+    geom_boxplot(outlier.shape = NA) +
+    scale_fill_manual(values = c("#A92D2F", "#CE7726", "#9B9759"))
+
+merge2 %>% filter(!is.na(Chr5_77682126_C_T)) %>%
+    ggplot(aes(x = Chr5_77682126_C_T, y = FC, fill = Chr5_77682126_C_T)) +
+    geom_boxplot(outlier.shape = NA) +
+    scale_fill_manual(values = c("#A92D2F", "#CE7726", "#9B9759"))
+
+write.csv(merge2, file = "F2R_FC_VT.csv", row.names = FALSE)
+
+Chr5_77682126_C_T
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
 
 *Todo* check labels in plot_vol function code
 
