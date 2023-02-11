@@ -61,10 +61,10 @@ plot_dir <- c("~/RNA/oct/plots") #where to save output plots
 
 #load packages #
 library(dplyr)
-library(data.table)
 library(ggplot2)
 library(ggrepel) 
 library(tidyr)
+library(data.table)
 library(tidylog)
 library(limma)
 library(stringi)
@@ -337,7 +337,9 @@ colnames(data$meta_data) <-
     replacement = c(''),
     vectorize = FALSE
   )
+```
 
+```{r Filter time points, include = FALSE}
 #Remove control samples - as these have diff time points, causes a later issue with time and vaccine being linearly dependent, analyse seperately for now
 table(data$samples$study_arm)
 
@@ -352,8 +354,6 @@ counts <- data$counts[rownames(data$counts) %in% rownames(genes),
                       colnames(data$counts) %in% meta_data$row_names]
 #filter rows (genes in counts, by the colnames (genes) in genes)
 
-
-
 #reform s3 DGElist object
 data <- DGEList(counts = counts,
                 genes = genes,
@@ -361,8 +361,7 @@ data <- DGEList(counts = counts,
 
 just_vax <- data
 
-#Keep control time points, but remove pre-chall timepoints in order to avoid linear dependencies issues later
-#Will probably have an issue with TD time point, that might need to be a seperate cohort
+#Keep control time points, but remove pre-chall timepoints in order to avoid linear dependencies issues later #Will probably have an issue with TD time point, that might need to be a seperate cohort
 table(data$meta_data$time)
 
 samples <-
@@ -392,14 +391,14 @@ Low expressed genes will be unreliable/not worth testing so remove these low cou
 
 ```{r Calculate log counts/per million}
 #Convert counts to log to minimise the effect of small values and negatives
+data <- sub
+
 cpm <- cpm(data)
 lcpm <- cpm(data, log=TRUE) #Used for exploratory plots/checks
 L <- mean(data$samples$lib.size) * 1e-6 #average library size
 M <- median(data$samples$lib.size) * 1e-6
 c(L, M)
-
 #Average library size is now 6.8 for post-chall samples, was 9 for pre-vac
-
 ```
 
 *Remove Lowly expressed genes*
@@ -412,9 +411,35 @@ data2 <- data[keep.exprs, keep.lib.sizes=FALSE] #subset og data
 dim(data2)#12969 genes across 521 participants
 ```
 
+```{r TPM}
+data <- data2
+#save.image(file = "vast_filtered_raw.RData")
+
+tpm3 <- function(counts,len) {
+  x <- counts/len
+  return(t(t(x)*1e6/colSums(x)))
+}
+
+tpm <- tpm3(data$counts, data$genes)
+exprs <- as.data.frame(t(tpm))
+exprs$row_names <- rownames(exprs)
+
+pheno <- data$samples
+pheno_exprs <- left_join(pheno, exprs, by = "row_names")
+write.csv(pheno_exprs, file = "vast_tpm.csv") # also batch adjusted in combat_rnaseq
+
+# Raw counts table
+exprs <- as.data.frame(t(data$counts))
+exprs$row_names <- rownames(exprs)
+pheno <- data$meta_data
+pheno_exprs <- left_join(pheno, exprs, by = "row_names")
+write.csv(pheno_exprs, file = "vast_tyg_comb_raw.csv")
+```
+
 Visualise the frequency of counts across study before and after filtering
 
 ```{r Visualise raw and filtered count data, warning=FALSE}
+
 lcpm.cutoff <- log2(10/M + 2/L)
 nsamples <- ncol(data) #521/514
 col <- brewer.pal(nsamples, "Paired")
@@ -444,7 +469,7 @@ data <- data2
 rm(data2)
 
 #Normalise data ###
-data <- calcNormFactors(data, method = "TMM")#Normalises count data via TMM scale
+data <- calcNormFactors(data, method = "TMM") #Normalises count data via TMM scale
 
 ```
 
@@ -563,7 +588,7 @@ The *design matrix* contains the model coefficients (explanatory variables) we s
 
 Rows are associated with samples and columns are associated with model coefficients. These coefficients are then supplied to the corresponding linear model to estimate gene expression.
 
-Categorical variable [[example:\\\\](example:){.uri}](%5Bexample:\%5D(example:)%7B.uri%7D){.uri} If a sample is TD, a = 1, if it is not a TD sample, a = 0.\
+Categorical variable [[example:\\\\](example:){.uri}](%5Bexample:%5D(example:)%7B.uri%7D){.uri} If a sample is TD, a = 1, if it is not a TD sample, a = 0.\
 The zeros tell the model to skip estimating the model parameter for that sample. <https://www.youtube.com/watch?v=Hrr2anyK_5s&ab_channel=StatQuestwithJoshStarmer>
 
 **Matrix formatting**
@@ -610,22 +635,30 @@ If our variable is categorical, then design models with and without the intercep
     -   Vars with all 0s or NAs add nothing to the model so can be removed
 
 ```{r Design Matrix, results='hide'}
-pData <- data$samples
-#str(pData)
+
 #Change sequence pool to factor
 data$samples$sequence_pool <- as.factor(data$samples$sequence_pool)
-data$samples$time <- as.factor(data$samples$time)
+data$samples$time_point3 <- as.factor(data$samples$time_point3)
+data$samples$diagnosis <- as.factor(data$samples$diagnosis)
 
-#Check for Nas
-test <-
-  data$samples[sapply(data$samples, function(x)
-    sum(is.na(x))), ]
-#samples have data for the design categories, however are missing levels of time factor which results in them being ommited from model.matrix - it was the vaccine rip
+# merged design
+data$samples$group <- str_c(data$samples$diagnosis, data$samples$time_point3, sep = "_")
+table(data$samples$group)
+data$samples$group <- as.factor(data$samples$group)
 
-#Model design matrix
 design <-
-  model.matrix( ~ 0 + time + study_arm + sex + sequence_pool, data = data$samples)
-#Leave out diagnosis for now
+  model.matrix(~0 +group + study_arm + age_at_do +sex +sequence_pool, data = data$samples)
+
+
+idx <- (data$samples$diagnosis != "UNKNOWN - Not Challenged")
+sub <- data[,idx]
+dim(sub)
+data <- sub
+data$samples <- droplevels(data$samples)
+
+#Check for Nas in design categories, then filter data [
+test <- data$samples[sapply(data$samples$group, function(x) sum(is.na(x))), ]
+#samples have data for the design categories, however are missing others
 
 # 1) Test for linear dependencies ####
 ncol(design)
@@ -650,7 +683,6 @@ test <- design[, -(which(colSums(design) == 0))]
 # These observations do not occur in other rows (from the same colname str_start as otherwise will be found in the covar cols)
 # Then remove these observations
 sum(design$time)
-
 design <- design[, -c(2, 3, 8:9)] #Just vax time points
 design <- design[, -c(12)] #Just chall also
 #Re-check rank/ncol
@@ -658,11 +690,14 @@ ncol(design)
 qr(design)$rank
 
 #Tidy new design colnames
+colnames(design)
 colnames(design) <- gsub("study_arm", "", colnames(design))
 colnames(design) <- gsub("time_point3", "", colnames(design))
-colnames(design) <- gsub("\\+", "plus", colnames(design))
+colnames(design) <- gsub("D0\\+", "D0.", colnames(design))
+colnames(design) <- gsub("Sex", "", colnames(design))
+colnames(design) <- gsub("sequence_", "", colnames(design))
+colnames(design) <- gsub("group", "", colnames(design))
 ```
-
 *Linear dependencies notes*\
 - The rank of the matrix is the total number of independent columns/vectors in the matrix. - So if our matrix rank is smaller than the number of columns, then there must be linear dependencies, i.e that vector can be made up by either a copy of or multiplying another one of the vectors. - A vector of all zeros will also count as a dependent vector, therefore need to remove these (as well as it being redundant for the model anyways)
 
@@ -688,7 +723,6 @@ pdf(paste(plot_dir, "voom1.pdf", sep = ""))
 v <- voom(data, design, plot = TRUE)
 dev.off()
 #more variance I think in post-chall samples
-
 ```
 
 Typically Voom plot shows higher variance for lower counts. If filtering was not performed properly, a drop in variance levels can be observed at the low end of the expression scale due to very small counts. Experiments with high biological variation tend to result in flatter trends, lower biological variation tend to have sharper trends.
@@ -718,8 +752,6 @@ v2 <- voom(
   plot = TRUE
 )
 dev.off()
-
-#y, design, block = targets$Block, correlation = corfit$consensus)
 
 #Lmfit 1###
 fit <-
@@ -758,12 +790,33 @@ results <-
 groups <- colnames(design[, grep("time", colnames(design))])
 groups <- colnames(design[, grep("time0v", colnames(design))])
 
-
 cm <- results$contrasts
 fit2 <- results$fit2
 toptables <- results$top_results
-
 plotSA(fit2) #check variance post-voom
+
+# Manual contrast ----------
+colnames(design)
+contrasts <- makeContrasts(
+  nTD_V1_vs_V0 = nTD_V1 - nTD_V0,
+  TD_V1_vs_V0 = TD_V1 - TD_V0,
+  TD_vs_nTD_V1 = (TD_V1 - TD_V0) - (nTD_V1 - nTD_V0),
+  nTD_V7_vs_V0 = nTD_V7 - nTD_V0,
+  TD_V7_vs_V0 = TD_V7 - TD_V0,
+  TD_vs_nTD_V7 = (TD_V7 - TD_V0) - (nTD_V7 - nTD_V0),
+  levels = colnames(design)
+) 
+
+fit2 <- contrasts.fit(fit, contrasts)
+fit2 <- eBayes(fit2)
+nTD_V1_vs_V0 <- topTable(fit2, coef = 1, number = Inf)
+TD_V1_vs_V0 <- topTable(fit2, coef = 2, number = Inf)
+TD_vs_nTD_V1 <- topTable(fit2, coef = 3, number = Inf)
+
+nTD_V7_vs_V0 <- topTable(fit2, coef = 4, number = Inf)
+TD_V7_vs_V0 <- topTable(fit2, coef = 5, number = Inf)
+TD_vs_nTD_V7 <- topTable(fit2, coef = 6, number = Inf)
+
 ```
 ##### Top tables
 
@@ -782,9 +835,6 @@ pheno_exprs <- pheno_exprs[,-c(1:5)]
 write.csv(pheno_exprs, file = "vast_lcpm.csv", row.names = T)
 ```
 
-
-
-
 ### 3) Data visualisation
 
 #### Plot Pipeline
@@ -799,11 +849,10 @@ write.csv(pheno_exprs, file = "vast_lcpm.csv", row.names = T)
 
 # UPDATE file dirs and data
 # system("mkdir ~/GWAS_22/new_gwas/Plots/DEG/volcanos/h12")
-plot_dir <- c("~/GWAS_22/new_gwas/Plots/DEG/volcanos/V1/")
+plot_dir <- c("~/GWAS_22/gwas_final/plots")
 plot_title <- c("24h Post-vaccination")
-factor <- c("Diagnosis")
 
-deg <- toptables$V1nTD_vs_V1TD
+deg <- TD_vs_nTD_V1
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # UPDATE
@@ -821,13 +870,16 @@ genes_fc <-
     "FCGR2C",
     "FCGR1A")
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+deg = TD_vs_nTD_V1
+deg$gene_name <- str_replace(deg$gene_name, "TNFSF13B", "BAFF")
+genes_iga <- c("TNFSF13", "BAFF","TNFSF12", "TGFBI","WARS", "SLAMF6", "ASGR2", "GAL3ST4","CD96", "TCF7L2")
 
-top <- plot_vol(deg, lab = 'top', title = plot_title)
-neut <-
+vol <-
   plot_vol(deg,
-           lab = 'sig',
-           genes = genes_neut,
+           lab = 'ns',
+           genes = genes_iga,
            title = plot_title)
+
 fc <-
   plot_vol(deg,
            lab = 'sig',
