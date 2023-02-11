@@ -11,11 +11,10 @@ set -ux
 
 dir=~/GWAS_22/gwas_final/merge
 plink_data=merge_rn
-data=enteric
+data=para
 
 cd ${dir}
-#mkdir QC
-qcdir=${dir}/enteric/QC
+qcdir=${dir}/para/QC
 mkdir log
 log=${qcdir}/log
 
@@ -27,7 +26,7 @@ cd ${qcdir}
 
 plink2 \
 --bfile ${dir}/${plink_data} \
---keep ${dir}/keep_ent.txt \
+--keep ${qcdir}/keep_para.txt \
 --make-bed \
 --out ${qcdir}/${data}
 

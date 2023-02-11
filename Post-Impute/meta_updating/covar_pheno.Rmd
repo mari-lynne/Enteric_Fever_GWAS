@@ -20,13 +20,10 @@ knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/meta')
 
 ```{r Set up, eval=TRUE}
 library(data.table)
-library(stringr)
-library(dplyr)
-library(plinkQC)
 library(tidylog)
+library(dplyr)
+library(stringr)
 library(janitor)
-
-
 load(file = "id_covars.RData")
 ```
 
@@ -164,8 +161,6 @@ covar_typhoid$vaccine <- ifelse(covar_typhoid$vaccine == 0,"None",
                                    ifelse(covar_typhoid$vaccine == 2, "M01ZH09",
                                           ifelse(covar_typhoid$vaccine ==  3,"Vi-PS",
                                                  ifelse(covar_typhoid$vaccine == 4,"Vi-TT",NA)))))
-
-
 #C, P = 3, T = 1, TN = 2
 covar_typhoid$challenge <- as.factor(covar_typhoid$challenge)
 levels(covar_typhoid$challenge) <- c("T", "TN")
@@ -208,10 +203,7 @@ covar_enteric <- covar_enteric %>% filter(IID %!in% missex)
 covar_enteric$IID <- str_pad(covar_enteric$IID, 3, pad = "0")
 
 covar_enteric <- left_join(covar_enteric, fam_ent, by = "IID")
-
-
 #missing 5 add leading zeros
-
 
 # Filter duplicates
 covar_enteric <- filter(covar_enteric, stri_duplicated(IID)==FALSE) %>%
@@ -268,7 +260,6 @@ plink --bfile /home/mari/GWAS_22/gwas_final/merge/merge_rn \
 --keep /home/mari/GWAS_22/gwas_final/meta/keep_t.txt \
 ```
 
-
 ```{bash filter-mergern}
 --make-bed \
 --out /home/mari/GWAS_22/gwas_final/merge/typhoid/typhoid2
@@ -324,13 +315,11 @@ vast_check <- left_join(vast_check, IDlink, by = c("genotyping_id", "lab_id",  "
 
 # Vaccine mismatches in covar file
 covar_typhoid2 <- dplyr::rename(covar_typhoid, cat_iid = IID)
-
 vast_check <- inner_join(covar_typhoid2, vast_check, by = "cat_iid")
 
 # recode vaccine.x (my covar info to match seq info)
 vax <- vast_check %>% mutate(vaccine.x = ifelse(vaccine.x == "None", "Control", vaccine.x),
                       vaccine.x = ifelse(vaccine.x == "Vi-TT", "Vi-TCV", vaccine.x))
-
 miss <- vax[vax$vaccine.x != vax$vaccine.y, ] # 16 :(
 
 # Get cols to update covar_typhoid with 
@@ -341,9 +330,7 @@ miss <- miss %>% mutate(vaccine = ifelse(vaccine == "Control", "None", vaccine),
                       vaccine = ifelse(vaccine == "Vi-TCV", "Vi-TT", vaccine))
 
 miss$chall_vax <- str_c(miss$challenge, miss$vaccine, sep = "x")
-
 miss <- rename(miss, IID = cat_iid)
-
 
 covar_typhoid <- filter(covar_typhoid, IID %!in% miss$IID)
 covar_typhoid <- bind_rows(miss, covar_typhoid)
@@ -362,5 +349,52 @@ save.image(file = "id_covars.RData")
 # covar_typhoid2 <- dplyr::select(covar_typhoid, FID, IID, study, age, sex, challenge, vaccine, chall_vax)
 # covar_typhoid2 <- dplyr::rename(covar_typhoid2, genotyping_id = IID)
 # check3 <- inner_join(check2, covar_typhoid, by = "genotyping_id") 
+```
+
+### Paratypoid
+```{r paratyphoid}
+fam_ent <- fread("~/GWAS_22/gwas_final//merge/merge_rn.fam")
+fam_ent <-  fam_ent %>% dplyr::select(V1, V2) %>% rename(FID = V1, IID = V2) #254
+covar_para <- covar_para %>% filter(IID %!in% missex)
+
+extra <- tidylog::anti_join(covar_para, fam_ent, by = "IID")
+
+# fam file has FID from typhoid studies, so need to update IIDs of covar_para file to match fam
+extra$IID <- str_remove_all(extra$IID, "_PATCH")
+
+# Remove current samples from covar_para
+covar_para <- tidylog::inner_join(covar_para, fam_ent, by = "IID")
+covar_para <- covar_para %>% select(-FID)
+covar_para <- bind_rows(extra, covar_para)
+
+covar_para <- tidylog::inner_join(covar_para, fam_ent, by = "IID")
+# only 3 missing :)
+
+# Make pheno and keep files ----------------------------------------------------
+pheno_para <- covar_para %>% select(FID, IID, Diagnosed)
+keep_p <- select(covar_para, FID, IID)
+
+
+write.table(keep_p, file="~/GWAS_22/gwas_final/merge/para/QC/keep_para.txt", row.names = F, quote = F, sep = '\t')
+write.csv(pheno_para, file="pheno_para.csv", row.names = F, quote = F)
+write.csv(covar_para, file="covar_para.csv", row.names = F, quote = F)
+```
+
+#### Cohort Summaries
+
+```{r typhoid gwas}
+fam <- fread("~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD.fam")
+fam <- rename(fam, FID = V1, IID = V2) %>% dplyr::select(FID, IID)
+final <- left_join(fam, pheno_typhoid, by = c("FID", "IID")) %>% inner_join(covar_typhoid, by = c("FID", "IID"))
+final <- filter(final, !is.na(Diagnosed.x))
+
+table(final$Diagnosed.x)
+
+
+# geom hist age of participants
+
+# double check typhoid diagnosis is TD and not PD (p sure I checked this though)
+
+
 ```
 

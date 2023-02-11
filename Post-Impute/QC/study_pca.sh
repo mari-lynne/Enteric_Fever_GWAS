@@ -1,4 +1,4 @@
-#!bin/bash
+#!/bin/bash
 set -ux
 # Subset data and rerun LD/PCA and make covar file
 
@@ -6,7 +6,7 @@ set -ux
 
 # Variables and Directories -----------------------------------------------------------
 #plink_data=typhoid2
-data=enteric
+data=para
 
 dir=~/GWAS_22/gwas_final/merge
 qcdir=${dir}/${data}/QC

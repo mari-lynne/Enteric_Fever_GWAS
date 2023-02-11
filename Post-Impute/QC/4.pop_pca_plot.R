@@ -220,9 +220,11 @@ ggsave("pve_ancestry.png")
 
 # PCA - Just study data  -------------------------------------------------------
 
+setwd("~/GWAS_22/gwas_final/merge/para/QC/pca")
+
 # Load data
-pca <- fread("enteric.LD.eigenvec")
-eigenval <- fread("enteric.LD.eigenval")
+pca <- fread("para.LD.eigenvec")
+eigenval <- fread("para.LD.eigenval")
 
 # Basic PCA
 ggplot(data = pca, aes(PC1, PC2)) + geom_point()
@@ -230,7 +232,18 @@ ggplot(data = pca, aes(PC1, PC2)) + geom_point()
 # PVE
 pve <- data.frame(PC = 1:10, pve = (eigenval/ sum(eigenval) * 100))
 pve$PC <- as.factor(pve$PC)
-cumsum(pve$V1)
+
+PC_Palette <-
+  heat_hcl(
+    10,
+    h = c(30, -160),
+    c = c(80, NA, 45),
+    l = c(38, 79),
+    power = c(0.85, 1.0),
+    fixup = TRUE,
+    gamma = NULL,
+    alpha = 1
+  )
 
 # Plot proportion of variance
 ggplot(pve, aes(PC, V1, colour = PC)) +
@@ -243,17 +256,27 @@ ggsave("pve_study.png")
 # Use these PCs in GLM model
 
 # PCA by outcome  -------------------------------------------------------
-covar <- fread("~/GWAS_22/gwas_final/meta/covar_enteric.txt")
+covar <- fread("~/GWAS_22/gwas_final/meta/covar_para.txt")
 pca_covar <- left_join(pca, covar, by = "IID") # matched 250, 301
 pca_covar$Diagnosed <- as.factor(pca_covar$Diagnosed)
-pca_covar <- pca_covar[,c(1:18,26:27)]
+
+pca_covar <- select(pca_covar, -packs_per_week)
+
 
 write.table(pca_covar,
-            file = "~/GWAS_22/gwas_final/meta/enteric_pcacovar.txt",
+            file = "~/GWAS_22/gwas_final/meta/para_pcacovar.txt",
             quote = F,
-            row.names = F,
-            col.names = T,
-            sep = "\t")
+            row.names = F)
+
+pheno <- select(pca_covar, FID, IID, Diagnosed)
+write.table(pheno,
+            file = "~/GWAS_22/gwas_final/meta/para_pheno.txt",
+            quote = F,
+            row.names = F)
+
+pheno <- pheno[!stri_duplicated(pheno$IID),] # mislabelled P1_D0+0029 older one is wrong
+pca_covar <- pca_covar[-45,]
+
 
 # Replot PCAS
 pca_covar %>%
@@ -270,12 +293,12 @@ pca_covar %>%
   geom_point(alpha = 0.9) +
   scale_colour_manual(values = c("seagreen3", "sandybrown"),
                       labels = c("nTD", "TD")
-                      )
+                      ) + theme_bw()
 
 # PCA by sex -------------------------------------------------------------------
 
-pca_covar$sex <- as.factor(pca_covar$sex)
 # M= 1, F = 2
+pca_covar$sex <- as.factor(pca_covar$sex)
 
 a <-
   pca_covar %>%
