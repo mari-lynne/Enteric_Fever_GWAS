@@ -1,0 +1,297 @@
+---
+title: "IGHV-GWAS"
+author: "Mari Johnson"
+date: "2023-01-24"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(janitor)
+library(forcats)
+library(stringr)
+library(RColorBrewer)
+library(viridis)
+library(ggpubr)
+library(ggplot2)
+library(data.table)
+library(patchwork)
+library(dplyr)
+library(tidylog)
+```
+
+# GWAS of IGHV Chain Usage
+
+## Background
+
+-   Vaccination stimulates both class switch recombination (constant region genes), and recombination of Variable (V), Diversity (D), Joining (J) genes.
+-   Following Tfh stimulation \> signalling \> Rag 1 and 2 enzymes are activated.
+-   These recognise RSS sites in IGHV genes and induce DSB.
+-   Regions are randomly (or so we thought!) excised and recombined into final IGHV gene using DNA Ligase/Artemis.
+-   These gene segments are then combined with constant region DNA for final product - ready to be transcribed into mRNA
+
+![VDJ recombination](~/GWAS_22/gwas_final/merge/typhoid/vast/igg/chains/vdj.png){width="50%"}
+
+-   So the RNA sequencing data of Ig (BCR) genes reflects the final product of this process at the time point of sequencing.
+-   Different IGHV transcripts might bind to typhoid Vi-antigen better - Therefore may associate with protection.
+-   Henderson analysis IGHV-23 usage in Vi-TCV did associate with nTD.
+
+**Hunches:**
+
+-   I found genetic signatures correlated with IgG/A titres
+-   Also trans-eQTLs for IGH genes which I want to follow up on
+-   Recent literature shows VDJ recombination can be strongly affected by DNA sequence
+-   [Immunoglobulin genes and susceptibility to disease - Review](https://www.sciencedirect.com/science/article/pii/S2452310020300536?via%3Dihub "Lit Review")
+
+### Questions?
+
+1)  Are genetic differences/polymorphisms in IGHV genes associated with IGHV repertoire following vaccination.\
+2)  Do polymorphisms in related enzymes such as RAG1/2 associate with IGHV repertoire
+3)  Are these polymorphisms also associated with differential IGHV gene expression
+4)  Are there any associations of polymorphisms \> repertoire \> protection
+
+#### Data sets
+
+-   Henderson BCR RNA sequencing data(currently as proportion of IGHV repertoire per time point).
+-   VAST RNA-Seq (VDJ not imputed)
+-   Genotyping data with imputation
+-   Clinical data and outcomes
+
+### Analysis
+
+Exp 1) - Associate IGHV-chain repertoire percentage at D7 with genotype
+
+Exp 2) - Associate IGHV-chain repertoire percentage fold change (D0-D7) with genotype
+
+Exp 3) - Associate IGHV diversity (Ginny index?) with GWAS
+
+Exp 4) - Associate IGHV expression with genotype
+
+## Methods
+
+-   Use PLINK2 in Bash to run a firth-penalised linear regression model; associating IGHV chain usage at day 7 with genotype
+-   PC's 1-5 age, sex, BMI, vaccine status are integrated as covariates
+
+$y = G\beta \:\:+ \:X\beta + \:e$
+
+-   Where y represents our response variable (IGHV-chain usage) G is the genotype dosage matrix, $X$ is the covariate matrix with an intercept vector, $e$ represents the standard error (or residual) of our model estimate, and $\beta$ are the coefficients of determination.
+
+-   Run association model first at a local level i.e SNPs within the IGH locus, then at the genome wide level
+
+-   I am going to test code with just IGHV-23 for now but ideally will rerun global analysis, looping over all the chain data in Bash
+
+## Data pre-processing
+
+### Check Data
+
+```{r pre-process, echo=FALSE}
+#knitr::opts_knit$set(root.dir = '~/GWAS_22/gwas_final/meta')
+load(file = "~/GWAS_22/gwas_final/meta/id_covars.RData")
+
+# IGHV data
+IGHV <- read.csv(file = "~/GWAS_22/gwas_final/merge/typhoid/vast/igg/chains/IGHV-usage.csv")
+head(IGHV)
+str(IGHV)
+
+# Just day 7 IGHV 23
+
+IGHV7 <- IGHV %>%
+  dplyr::rename(chain = v) %>%
+  filter(Timepoint2 == "V7") %>%
+  distinct()
+
+```
+
+### Match to GWAS IDs
+
+```{r id match, echo=TRUE, message = FALSE, results='hide'}
+
+head(IDlink)
+head(IGHV7)
+
+IDlink$participant_id <- as.character(IDlink$participant_id)
+
+IGHV7 <- IGHV7 %>%
+  mutate(participant_id = str_remove_all(IGHV7$PartID, "SPT-03"))
+
+IGHV_id <- left_join(IGHV7, IDlink, by = "participant_id")
+
+# Make pheno file
+
+vast_covar <- covar_pca %>% filter(study == "VAST")
+
+IGHV_id$IID <- IGHV_id$cat_iid
+
+ig_covar <- inner_join(vast_covar, IGHV_id, by = "IID")
+# 5 ids din't match - check ids later, 61 total
+
+ig_covar <- filter(ig_covar, !is.na(PC1))
+table(ig_covar$vaccine,ig_covar$Diagnosis)
+
+# check dups
+
+table(ig_covar$chain)
+
+# only keep chain count is greater than 50
+dat <- ig_covar
+dat <- dat %>% group_by(chain) %>% filter(n() > 54)
+table(dat$chain)
+# average number of observations = 60, quite small n
+
+# split into separate dfs save as chain var.csv
+
+chains <- split(dat, dat$chain)
+
+lapply(seq_along(chains), function(x) {
+  write.table(
+    chains[[x]],
+    paste0(x, ".txt"),
+    row.names = FALSE,
+    quote = FALSE,
+    sep = "\t"
+  )
+})
+
+
+for (i in 1:length(chains)) {
+  write.table(
+    chains[i],
+    file = paste0(names(chains)[i], ".txt"),
+    col.names = names(ig_covar),
+    row.names = FALSE,
+    quote = FALSE,
+    sep = "\t"
+  )
+}
+
+# pheno
+
+ig_pheno <- select(ig_covar, FID, IID, ighv_usage)
+
+# pheno_list <-
+#   for (i in 1:length(chains)) {
+#     dplyr::select(
+#     FID, IID, ighv_usage
+#     )
+#   }
+# 
+# pheno_list <- lapply(chains, dplyr::select(FID, IID, ighv_usage))
+
+
+# GO to bash
+# make pheno file - can be from the same big pheno file yay
+# run plink code
+#sort by signif
+
+ig_covar <- ig_covar %>% mutate(dup_check = stri_duplicated(ig_covar$ighv_usage))
+
+
+dups <- ig_covar %>% filter(dup_check == "TRUE")
+
+ig_covar <- ig_covar[-54,]
+
+write.table(ig_covar, file="~/GWAS_22/gwas_final/meta/ig-pcacovar-all.txt",
+            row.names = F, quote = F, sep = '\t')
+# pheno
+ig_pheno <- select(ig_covar, FID, IID, ighv_usage)
+# dup entry for 115_20-115, but v similar value (probably a repeat in hendos)
+
+write.table(ig_pheno, file="~/GWAS_22/gwas_final/meta/ig-pheno-all.txt",
+            row.names = F, quote = F, sep = '\t')
+
+```
+
+#### Reshape data
+
+-   For global analysis
+-   remove IGHV genes where there is no variance as effect size will be too small
+
+## GWAS of IGHV usage
+
+The code and results below just use IGVH3-23 data to test. Will rerun the analysis in linux across all chains.
+
+```{bash cgas, echo = TRUE, message = FALSE, results='hide'}
+# Select IGHV region, covars, run
+# Update pheno and file names as required
+
+# IGHV region - Chr 14 105586437-106879844
+# Plus and - 10 KB = 105576437 106889844
+
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.1 \
+--chr 14 \
+--from-bp 105576437 \
+--to-bp 106889844 \
+--pheno ~/GWAS_22/gwas_final/meta/ig-pheno.txt \
+--pheno-name ighv_usage \
+--covar ~/GWAS_22/gwas_final/meta/ig-pcacovar.txt \
+--covar-name age, bmi, sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out ~/GWAS_22/gwas_final/merge/typhoid/vast/igg/chains/ighv3-23
+
+#373 SNPS tested
+#haven't pruned for LD
+
+```
+
+```{bash all-snps, echo = TRUE, message = FALSE, results = 'hide'}
+
+plink2 --bfile ~/GWAS_22/gwas_final/merge/typhoid/QC/typhoid2.IBD \
+--maf 0.1 \
+--pheno ~/GWAS_22/gwas_final/meta/ig-pheno.txt \
+--pheno-name ighv_usage \
+--covar ~/GWAS_22/gwas_final/meta/ig-pcacovar.txt \
+--covar-name age, bmi, sex, chall_vax, PC1, PC2, PC3, PC4, PC5 \
+--covar-variance-standardize \
+--glm \
+--adjust \
+--out ~/GWAS_22/gwas_final/merge/typhoid/vast/igg/chains/ighv3-23-all
+
+```
+
+### Results
+
+CGAS of IGH gene SNPs with IGHV3-23 usage:
+
+```{r ighv-snps}
+
+results <- fread("~/GWAS_22/gwas_final/merge/typhoid/vast/igg/chains/ighv3-23.ighv_usage.glm.linear.adjusted")
+head(results)
+
+```
+
+GWAS of IGHV3-23 usage:
+
+```{r gwas-snps, echo= FALSE}
+
+results <-fread("~/GWAS_22/gwas_final/merge/typhoid/vast/igg/chains/ighv3-23-all.ighv_usage.glm.linear.adjusted")
+head(results)
+
+```
+
+#### Plots
+
+Plots to get an indication of the effect size/cohort
+
+```{r pressure, echo=FALSE}
+a <- ggplot(ig_covar, aes(x=ighv_usage, fill =Diagnosis)) + geom_histogram(bins=25, color="black") + labs(x = " \nIGHV3-23 Usage (\\%)") +scale_fill_brewer(palette="Dark2") + theme_bw() + labs(title = "IGHV-23 Usage - 7 Days Post-Vax")
+
+b <- ggplot(ig_covar, aes(x=ighv_usage, fill =Diagnosis)) + geom_histogram(bins=25, color="black") + labs(x = " \nIGHV3-23 Usage (\\%)") +scale_fill_brewer(palette="Dark2") + theme_bw() + labs(title = "Vaccine Split") + facet_wrap(~Vaccine)
+
+(a/b) + plot_layout(guides = "collect")
+
+```
+
+## Next steps
+
+-   Double check mismatched IDs (n=5)
+-   Speak to Henderson about possibility of also associating with diversity index
+-   Rerun code with all of the chain data
+-   Cross reference top SNPs with eQTL analysis
+-   Although there might not be genome-wide significant results (to be determined); if the top SNPs match up with the trans-eQTL SNPs, then that would be interesting/publishable data (in my opinion)
+-   Consider LD pruning or GWAS using haplotypes
